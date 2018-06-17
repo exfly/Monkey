@@ -1556,6 +1556,178 @@ func evalIfExpression(ie *ast.IfExpression) object.Object{
 ```
 好了，错误异常处理完毕。
 <h2 id="ch04-Binding-and-Environment">4.9 绑定和环境</h2>
+接下来我们要做的事是增加绑定用来以便支持`Let`语句。但是不仅仅我们需要支持`Let`语句，还要支持变量的执行。用一个代码片段来说明我们要去执行的内容：
+```go
+let x = 5 * 5;
+```
+仅仅支持上述的这种语句是不够的，我们同样也需要确保解释器在执行`x`的时候得到的是10。
+
+所以本小节的任务是执行`let`语句和变量。我们在执行`let`语句的时候通过计算右边的表达式时候获取一个值，并且将该值保存到一个具体名称的变量中。在执行变量的时候的，我们首先查看该变量是否我们已经绑定了特定的值。如果已经绑定，则执行该值，否则我们返回一个错误。
+
+听上去好像很不错的方案？好的，首先开始一些测试：
+```go
+func TestStatement(t *testing.T){
+    tests := []struct {
+        input string
+        expected int64
+    }{
+        {"let a = 4; a ;" , 5},
+        {"let a = 5 * 5; ", 25},
+        {"let a = 5; let b = a; b;", 5},
+        {"let a = 5; let b = a; let c = a + b; c;", 15},
+    }
+    for _, tt := range tests {
+        testIntegerObject(t, testEval(tt.input), tt.expected)
+    }
+}
+```
+这些测试主要做了两件事：一是执行`let`语句中那些可以产生值的表达式；二是执行那些绑定值得变量。但是我们也需要一些测试来确保当我们执行那些未绑定值得变量时候生成一些错误。因此我们简单地拓展已经存在的`TestErrorHandling`函数：
+```go
+//evalutor/evaluator_test.go
+func TestErrorHanding(t *testing.T){
+    tests := []struct {
+        input string
+        expectedMessage string
+    }{
+        {
+            "footbar",
+            "Identifier not found: foobar",
+        },
+    }
+// [....]
+}
+```
+但是我们如何让我们的测试通过呢？显然第一件事就是我们需要在`Eval`再增加一个用例分支`*ast.LetStatment`，在这个分支中，我们计算的分支表达的是否正确？
+```go
+//evalutor/evaluator.go
+func Eval(node ast.Node) object.Object {
+// [...]
+    case *ast.LetStatement:
+        val := Eval(node.Value)
+        if isError(val){
+            return val
+        }
+    //Huh? Now what?
+}
+```
+正如注释中所说的，接下来怎么办呢？我们改如何记录值呢？我们有一个值和它要绑定的变量名。我们该如何将其中的一个绑定到另一个中呢？
+
+在这里我们所说的环境将要发挥作用，环境就是我们用来记录一个值和其相应变量的名称。因为在其他解释器中也采用环境概念描述，这是个传统，尤其是`Lisp`家族语言。尽管这个名称听上去很复杂，但是在环境最核心的就是一个哈希表，用来将字符串和对象关联起来，这也是我们接下来我们要去实现的。
+
+我们将`Environemt`结构添加到`object`包中，是的，它仅仅将`map`封装起来。
+```go
+package object
+func NewEnvironment() *Environment{
+    s := make(map[string]Object)
+    return &Environment{store: s}
+}
+type Environment struct {
+    store map[string]Oject
+}
+func (e *Environemt) Get(name string) (Object, bool) {
+    obj, ok := s.store[name]
+    return obj, ok
+}
+func (e *Environemt) Set(name strong, val Oject)object {
+    s.store[name] = val
+    return val
+}
+```
+让我猜猜你现在想些什么，为什么不直接时候`map`?为什么要做一层封装？到后面我们开始实现函数和函数调用的时候你就明白了，这是我们接下来工作的基础。
+
+正如其用法`object.Environment`，这能够自解释，但是我们我们如何在`Eval`函数中使用呢？怎么或者如何记录这个环境呢？我们在`Eval`函数中作为一个参数传递过去。
+```go
+//evalutor/evalutor.go
+func Eval(node ast.Node, env *object.Environment) objec.Object {
+//[...]
+}
+```
+除此之外，不需要做其他改变，因为我们需要修改其他任何调用`Eval`函数以便增加环境的使用。不仅仅是`Eval`函数内部调用`Eval`函数，而且是其他一些函数比如`evalProgram`,`evalIfExpression`等调用`Eval`的函数。这些都需要手动的编辑的工作， 因此在这里不展示这些改变的工作。
+
+与此同时`REPL`也调用了`Eval`函数，因此也需要增加环境。当然在`REPL`中只需要一个环境值即可：
+```go
+//repl/repl.go
+func start(in io.Reader, out io.Writer){
+    scanner := bufio.NewScanner(in)
+    env := object.NewEnvironment()
+    for {
+// [...]
+        evaluated := evaluator.Eval(program, env)
+        if evaluated != nil {
+            io.WriteString(out, evaluted.Inspect())
+            io.WriteString(out, "\n")
+        }        
+    }
+}
+```
+在这里我们使用的环境`env`在调用`Eval`函数之前，如果不这样做，那么`REPL`中绑定一个变量将不会有有任何作用。只要在下一行代码中执行，相关联的代码将不会存在新的环境中。
+
+同样在我们的测试环境中也是如此，我们不想在每一个测试函数测试用例中保存状态。每个调用的`testEval`都会拥有一个新的环境，这边避免一些全局状态影响导致的一些Bug。在这里每个调用`Eval`就会得到一个崭新的环境：
+```go
+//evalutor/evaluator_test.go
+func testEval(input string) object.Object {
+    l := lexer.New(input)
+    p := parser.New(l)
+    program := p.ParseProgram()
+    env := object.NewEnviroment()
+    return Eval(program, env)
+}
+```
+更新`Eval`函数调用后，我们开始让其通过，这样做并不困难。在`*ast.LetStatement`中的分支中，我们用了的变量的名称和值，我们将其保存到当前环境中去：
+```go
+//evalutor/evalutor.go
+func Eval(node ast.Node, env *object.Environment) object.Object {
+// [...]
+    case *ast.LetStatement:
+        val := Eval(node.Value, env)
+        if isError(val){
+            return val
+        }
+        env.Set(node.Name.Value, val)
+}
+```
+现在我们已经在环境变量中增加值在执行`let`语句的时候，但是我们还需要获取其绑定的值当我们在执行变量语句的时候，这些很容易做：
+```go
+// evalutor/evalutor.go
+func Eval(node ast.Node, env *object.Environment) object.Object {
+//[...]
+    case *ast.Identifier:
+        return evalIdentifer(node, env)    
+}
+func EvalIdentifer(
+    node *ast.Idenfier,
+    env *object.Environment,
+)object.Object {
+    val, ok := env.Get(node.Value)
+    if !ok {
+        return newError("idenfier not found: " + node.Value)
+    }
+    return val
+}
+```
+`evalIdentifier`在下一节将会被拓展，但是目前可以简单检查值是否绑定到相应的名称中。如果已经绑定成功，返回该值，否则生成一个错误。
+
+看上去如此：
+```
+$ go test ./evaluator
+ok monkey/evaluator 0.007s
+```
+是的，这就是我们刚开始所说的，现在我们已经在编程领域的稳稳站住了。
+```
+$ go run main.go
+Hello mrnugget! This is the monkey programming language!
+Feel free to type in commands
+>> let a = 5;
+>> let b = a > 3;
+>> let c = a * 90;
+>> if (b) { 10 } else { 1 };
+10
+>> let d = if ( c> a) {99}else {100}；
+>> d
+99
+>> d * c * a
+245025
+```
 
 <h2 id="h04-Function-and-Function-Call">4.10 函数和函数调用</h2>
 <h2 id="ch04-Trash-Out">4.11 垃圾回收</h2>
