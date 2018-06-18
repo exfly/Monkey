@@ -1730,6 +1730,210 @@ Feel free to type in commands
 ```
 
 <h2 id="h04-Function-and-Function-Call">4.10 函数和函数调用</h2>
+这一节是我们一直工作努力的方向， 我们将在我们的解释器中增加对函数和函数调用的支持。当我们完成这一小节，我们就能在`REPL`中做如下的操作：
+```
+>> let add = fn(a, b, c, d) { return a + b + c + d};
+>> add(1, 2, 3, 4)
+10
+>>let addThree = fn(x) { return x + 3 };
+>>addThree(3);
+6
+>>let max = fn(x, y) { if (x>y) {x} else { y }};
+>>max(5, 10)
+10
+>> let factorial = fn(n) { if (n==0) {1} else { n * factorial(n-1)}};
+>>factorial(5)
+120 
+```
+如果上述的代码还不能吸引你，那么请看看下面，传递函数，高阶函数和闭包同样奏效：
+```
+>> let callTwoTimes = fn(x, func){ func(func(x))}
+>> callTwoTimes(3, addThree);
+9
+>> let newAdder = fn(x) { fn(n) { x + n}};
+>> let addTwo = newAddr(2);
+>> addTwo(2);
+4
+```
+是的，接下来我们将要把上述的所有功能全部实现。
+
+从目前来讲我们已经完成的工作来看，我们还需要完成其他两件事情：一是在对象系统中对应我们的函数表达；另外一件是在`Eval`函数中增加函数调用支持。
+
+别担心，这些都很简单。上一节我们所做的工作即将发挥作用了，我们可以在此基础上重用和拓展先前的成果，你将会看出许多事情仅仅是适应特定的环境的。
+
+我们将仅仅遵循每次只完成一步工作的原则，第一步就是关注如何实现内部函数表达。
+
+我们必须要承认的是在Monkey语言中，函数和其他值一样：绑定到特定的变量名称上，在表达式中使用它们，将它们传递到其它函数中，从其它函数中返回等等如此。因此我们需要在对象系统中表达出来，这样做才能传递、赋值和返回。
+
+那我们如何在内部表达呢？作为一个`Oject`?是的，在`ast.FunctionLiteral`中开始我们的工作:
+```go
+//ast/ast.go
+type FunctionLiteral struct {
+    Token Token.Token // The 'fn' token
+    Parameters []*Identifer
+    Body *BlockStatement
+}
+```
+貌似在函数对象中我们不需要`Token`字段，但是`Parameter`和`Body`是需要的。 如果没有函数体的话，我们不能执行一个函数；如果没有形参的话，我们也不能执行函数体。但是除此之外我们还需要第三个字段在函数对象：
+```go
+// object/object.go
+const (
+//[...]
+    FUNCTION_OBJ = "FUNCTION"    
+)
+type Function struct {
+    Parameters []*ast.Identifier
+    Body *ast.BlockStatement
+    Env *Environment
+}
+func (f *Function) Type() ObjectType { return FUNCTION_OBJ }
+func (f *Function) Inspect() string {
+    var out bytes.Buffer
+    params := []string{}
+    for _, p := range f.Parameters {
+        params = append(params, p.String())
+    }
+    out.WriteString("fn")
+    out.WriteString("(")
+    out.WriteString(strings.Join(params, ", "))
+    out.WriteString(") {\n")
+    out.WriteString(f.Body.String())
+    out.WriteString("\n}")
+    return out.String()
+}
+```
+`object.Function`对象除了拥有`Parameters`和`Body`字段外，还有`Env`字段。它是一个指向`object.Environment`对象的指针。因为Monkey语言中函数包含其当前的环境变量。它支持闭包，也就是在它能包含函数定义时候的环境变量，在将来访问的时候也能获取得到。因此使用`Env`字段意义重大。
+
+通过上述的定义，我们可以通过编写测试来判断我们的解释器是否知道如何去构建函数:
+```go
+// evaluator/evaluator_test.go
+func TestFunctionObject(t *testing.T) {
+	input := `fn(x) { x+2; };`
+	evaluated := testEval(input)
+	fn, ok := evaluated.(*object.Function)
+	if !ok {
+		t.Fatalf("object is not Function. got=%T(%+v)",
+			evaluated, evaluated)
+	}
+	if len(fn.Parameters) != 1 {
+		t.Fatalf("function has wrong parameters. Parameters=%+v",
+			fn.Parameters)
+	}
+	if fn.Parameters[0].String() != "x" {
+		t.Fatalf("parameter is not 'x'. got=%q", fn.Parameters[0])
+	}
+	expectedBody := `(x + 2)`
+	if fn.Body.String() != expectedBody {
+		t.Fatalf("body is not %q. got=%q", expectedBody, fn.Body)
+	}
+}
+```
+测试函数将表明我们的执行一个字面函数表达式能够正确返回`*object.Function`对象，并且函数参数和函数体都是正确的。接来下我们会测试是否或者正确环境。为了让测试通过，我们需要在`Eval`函数中增加一些`case`分支。
+```go
+// evalutor/evalutor.go
+func Eval(node ast.Node, env *object.Environment) object.Object {
+//[...]
+    case *ast.FunctionLiteral:
+        params := node.Parameters
+        body := node.Body
+        return &object.Function{Parameters: params, Env: env, Body: body}
+//[...]
+}
+```
+测试通过了，是不是很简单？我们仅仅是重用了`Parameter`和`Body`字段，并且注意到购将函数对象的时候，我们也使用当前环境。
+
+使用相对低层次的测试用例，我们可以确保我们已经构建好内部函数的表达。我们可以将注意点转移到函数应用，也就是说拓展我们的解释器以便可以调用函数，对此而言，测试用例非常容易读懂：
+```go
+//evalutor/evalutor_test.go
+func TestFunctionApplication(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected int64
+	}{
+		{"let identity=fn(x){x;}; identity(5);", 5},
+		{"let identity=fn(x){return x;}; identity(5);", 5},
+		{"let double=fn(x){x*2;}; double(5);", 10},
+		{"let add = fn(x, y) { x+y;}; add(5,5);", 10},
+		{"let add=fn(x,y){x+y;}; add(5+5, add(5,5));", 20},
+		{"fn(x){x;}(5)", 5},
+	}
+	for _, tt := range tests {
+		testDecimalObject(t, testEval(tt.input), tt.expected)
+	}
+}
+```
+在这里每一个测试都做了同样的事情：定义一个函数、使用参数调用它然后对其的生成值做一次判断。但是有一点不同的是，有的返回值都是隐式的，有的使用`return`语句，有的使用表达式作为参数，有的多个参数需要被执行参数之后才传递函数。
+
+我们同样也需要测试`*ast.CallExpression`的两种形式：一种是函数是一个变量，通过变量来调用函数。另一种是字面函数调用。幸运的是两者并没有任何不同的影响。我们已经知道了如何执行标识符和函数字面值：
+```go
+// evaluator/evalutor.go
+func Eval(node ast.Node, env *object.Environment) objct.Object {
+//[...]
+    case *ast.CallIfExpression:
+        function := Eval(node.Function, env)
+        if isError(function){
+            return function
+        }
+}
+```
+是的，我们仅仅通过调用`Eval`获取我们要调用的函数，无论它是`*ast.Identifier`或者是`*ast.FunctionLiteral`。`Eval`都会返回一个`*object.Function`。
+
+但是我们如何调用这个`*object.Function`呢？第一步是执行参数是表达的，原因非常简单：
+```
+let add = fn(x, y) { x + y };
+add(2 + 2, 5 + 5)
+```
+在这里我们将`4`和`10`作为参数传递给`add`函数，而不是表达`2+2`和`5+5`。
+
+执行参数就是执行一系列表达式，并且记录生成值。但是我们必须停止执行只要发生错误，代码如下：
+```go
+//evalutor/evalutor.go
+func Eval(node ast.Node, env *object.Environment) object.Object {
+// [...]
+    case *ast.CallExpression:
+        function := Eval(node.Function, env)
+        if isError(function){
+            return function
+        }
+        args := evalExpression(node.Arguments, env)
+        if len(args) == 1 && isError(args[0]) {
+            return args[0]
+        }
+// [...]
+}
+func evalExpresion(
+    exps []ast.Expression,
+    env *object.Environment,
+)[]object.Object {
+    var result []object.Object
+    for _, e := range exps {
+        evaluated := Eval(e, env)
+        if isError(evaluated) {
+            return []object.Object{evaluated}
+        }
+        result = append(result, evaluated)
+    }
+    return result
+}
+```
+这里没有一点魔法，我们仅仅是迭代`ast.Expression`列表并且根据上下文环境进行执行。如果遇到错误，我们停止执行并且返回该错误。在这里我们从左到右执行参数计算。希望我们没有编写代码测试判断参数计算的顺序，即便做了我们也是非常安全的。
+
+所以，现在我们既有了函数和一系列执行出来的参数，我们该如何调动函数呢？如何将函数和这些参数联系在一起呢？
+
+明显的答案是我们需要执行函数体，函数体就是语句块。我们已经知道如何去执行语句块了，所以为什么不直接调用`Eval`函数，并且将函数体传递过去就行了呢？答案是：参数。函数体包含了函数参数的引用，如果仅仅执行函数体使用当前的环境将会导致引用一些未知的名称，这些将会导致错误。所以执行函数体使用当前环境将不会起作用的。
+
+我们需要的做的就是在执行的时候修改环境，以便函数形参能够解析到正确的实参。而且我们也不能简单的将当前的实参插入到当前的环境中，这也不是我们希望的。我们希望如下表达：
+```
+let i = 5;
+let printNum = fn(i){
+    puts(i);
+};
+printNum(10);
+puts(i)
+```
+`puts`函数将输出一行内容，在上述代码应该输出两行，分别包含`10`he `5`。如果我们在执行函数`printNum`的函数体的时候，最后一行将会输出`10`。
+
+所以
 <h2 id="ch04-Trash-Out">4.11 垃圾回收</h2>
 
 <h1 id="ch05-Extending-the-Interpreter">5 拓展解释器</h1>
