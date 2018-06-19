@@ -1933,7 +1933,105 @@ puts(i)
 ```
 `puts`函数将输出一行内容，在上述代码应该输出两行，分别包含`10`he `5`。如果我们在执行函数`printNum`的函数体的时候，最后一行将会输出`10`。
 
-所以
+所以仅仅将函数的实参加入到当前环境中以便函数体调用并没有作用。 我们需要做的不是保存先前的环境，而是拓展环境。
+
+拓展环境意味着我们创建一个新的`object.Environment`实例，并且指向它以便完成拓展。通过这样创建包含了一个崭新的空的环境并且包含当前已经存在的环境。
+
+当新的环境调用`Get`方法的时候，如果自身环境不存在该变量对应的名称，则调用它包含了环境。如果包含的环境也没有改名称，则调用包含环境的包含环境直到没有其他包含环境。我们可以放心的说："错误，未知标识符：foobar"。
+```go
+// object/environment.go
+package object
+func NewEncloseEnvironment(outer *Environment) *Environment{
+    env := NewEnvironment()
+    env.outer = outer
+    return env
+}
+func NewEnvironemt() *Environment{
+    s := make(map[string]Object)
+    return &Environemnt{store: s, outer:nil}
+}
+type Environment struct {
+    store map[string]Object
+    outer *Environment
+}
+func (e *Environment) Get(name string) (Object, bool){
+    obj, ok := e.store[name]
+    if !ok && e.outer != nil {
+        obj, ok = e.outer.Get(name)
+    }
+    return obj, ok
+}
+func (e *Environment) Set(name string, val Object) Object {
+    e.store[name] = val
+    return val
+}
+```
+`object.Environment`现在有新的字段`outer`，它包含了其他`object.Environment`对象的引用，也就是包含环境。`NewEnclosedEnvironment`函数很容易地创建一个包含环境。`Get`方法也做了相应的修改，它现在对给定的名称也会查询包含环境。
+
+新的问题是我们该如何考虑变量的作用域。在这里有内部作用域和外部作用域。对于没有在内部作用域中发现的，将会去外部作用域中寻找。外部作用域包含内部作用域，而内部作用域拓展外部作用域。
+
+使用我们更新后的`object.Environment`，函数就能正确的执行函数体。要记住，先前的问题是在函数的实参可能重写绑定的环境，但是现在通过创建新的环境，并且包含在当前的环境中避免这种问题出现。
+
+更新后的`Eval`函数如下所示，它能完全正确处理函数调用：
+```go
+// evaluator/evaluator.go
+func Eval(ndoe ast.Node, env *object.Environment) object.Object {
+//[...]
+    case *ast.CallExpression:
+        function := Eval(node.Function, env)
+        if isError(function){
+            return function
+        }
+        args := evalExpression(node.Arguments, env)
+        if len(args) == 1 && isError(args[0]) {
+            return args[0]
+        }
+        return applyFunction(function, args)
+}
+func extendFunctionEnv(
+    fn *object.Function,
+    args []object.Object,
+)*object.Environment {
+    env := object.NewEnclosedEnvironment(fn.Env)
+    for parmIdx, para m := range fn.Parameters {
+        env.Set(param.Value, args[paramIdx])
+    }
+    return env
+}
+
+func upwrapReturnValue(obj object.Object) object.Object {
+    if returnValue, ok := obj.(*object.ReturnValue); ok {
+        return returnValue.Value
+    }
+    return obj
+}
+```
+在新的`applyFunction`函数中，我们不仅仅检查我们是否有`*object.Function`而且还讲`fn`的参数转换为`*object.Function`的引用，以便能够获取函数的`.Env`和`.Body`两个字段（这些在`object.Object`中并不拥有）。
+
+在`extendFunctionEnv`函数中，我们创建了新的`*object.Environment`并且它被函数的的环境变量包含着。在新的被包含的环境中，它绑定了参数调用的形参和实参。
+
+新的环境才是函数体调用执行使用的环境，这个返回结果被拆封， 以免`*object.ReturnValue`被返回。这样做事必须的，否则`return`结果将会被上浮，导致整个执行被退出，但是我们仅仅需要在函数体在最后一句停止执行。这就是我们为什么需要将返回结果拆封，所以`evalBlockStatement`不会停止执行函数外面的语句。我同样也在`TestReturnStatements`测试函数中增加了些测试用例来确保它们能够工作。
+
+记下来一部分就是我们最后剩下来的一部分工作：
+
+```
+$ go test ./evaluator
+ok monkey/evaluator 0.007s
+$ go run main.go
+Hello mrnugget! This is the monkey programming language!
+Feel free to type in commands
+>> let addTwo = fn(x) { x + 2; };
+>> addTwo(2)
+4
+>> let multiply = fn(x, y) { x * y };
+>> multiply(50/2, 1 * 2)
+50
+>> fn(x) { x == 10 }(5)
+false
+>> fn(x) { x == 10}(10)
+true
+```
+
 <h2 id="ch04-Trash-Out">4.11 垃圾回收</h2>
 
 <h1 id="ch05-Extending-the-Interpreter">5 拓展解释器</h1>
