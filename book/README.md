@@ -2031,7 +2031,76 @@ false
 >> fn(x) { x == 10}(10)
 true
 ```
+是的，它成功了，现在我们终于可以定义和调用函数。在我们庆祝之前，还值得我们进一步查看函数和它所在的环境。我们还不清楚它能做些什么。
 
+我想你一直在思考一个问题：我们为什么不适用函数的环境而不是当前的环境，简单来说如下所示：
+```go
+//evalutor/evalutor_test.go
+func TestCloures(t *testing.T){
+    intput := `
+    let newAdder = fn(x) {
+        fn(y) { x + y };
+    };
+    let addTwo = newAdder(2)
+    addTwo(2);
+    `
+    testIntegerObject(t, testEval(input), 4)
+}
+```
+测试时通过的：
+```
+$ go run main.go
+Hello mrnugget! This is the monkey programming language!
+Feel free to type in commands
+>> let newAdder = fn(x) { fn(y) { x + y } };
+>> let addTwo = newAdder(2);
+>> addTwo(3);
+5
+>> let addThree = newAdder(3);
+>> addThree(10);
+13
+```
+Monkey拥有闭包的特性并且在我们的解释器中工作得很好，是不是很酷？但是闭包和原先的问题还是非常明了。闭包是函数在定义的时候与其所在环境关联起来。它携带自身的环境在函数调用的时候也能访问它们。
+
+在上述例子中最重要的两行代码如下：
+```
+let newAdder = fn(x){ fn(y) { x + y}};
+let addTwo = newAddr(2);
+```
+`newAdder`是一个高阶函数，它是一种返回一个函数或者接受一个函数作为参数的函数。在这个例子中`newAdder`返回其他的函数，但是它不是其他函数而是一个闭包。`addTwo`绑定这个闭包，并且它是`newAdder`和一个`2`单独的实参。
+
+那什么导致`addTwo`变成一个闭包？答案就是它在调用时候绑定的内容。当`addTwo`被调用的时候，它不仅仅能够访问他的的实参`y`参数，而且能够访问它在创建的时候`newAdder(2)`的参数`2`。尽管它绑定的参数已经离开他它的作用域，而且不在当前的环境中：
+```
+>>let newAdder = fn(x){ fn(y) { x + y}};
+>>let addTwo = newAdder(2);
+>> x
+ERROR: identifier not found: x
+```
+`x`在顶级的环境中，并没有绑定一个值，但是`addTwo`仍然访问它：
+```
+>>addTwo(3)
+5
+```
+换句话说，`addTwo`闭包仍然可以访问它在定义的时候的环境，也就是当`newAdder`函数体最后一句执行的时候。最后一行是字面函数，当一个字面函数被创建的时候，我们购将一个`object.Function`，并且保存它一个指向当前环境指针的字段`.Env`。
+
+当我们后来执行`addTwo`的函数体的时候，我们并不是在当前环境中执行，而是在函数的环境中执行。我们拓展函数环境并且将其传递给`Eval`函数而不是当前环境。为什么要这么做呢？因为我们可以仍然可以访问它们；为了可以使用闭包；为了我们可以做出炫酷的东西出来。
+
+既然我们在讨论神奇的东西，同样值得我们注意的是：我们不仅仅可以从其他函数中返回参数，也可以在函数中接受其他函数作为参数。是的，函数是Monkey语言中的一等公民，我们可以像其他类型一样进行传递。
+```
+>> let add = fn(a, b) { a + b }
+>> let sub = fn(a, b) { a - b }
+>> let applyFunc = fn(a, b, func){ func (a, b) }
+>> applyFunc(2, 2, add);
+4
+>> applyFunc(10, 2, sub);
+8
+```
+在这里我们将`add`和`sub`函数作为参数传递`applyFunc`。它调用函数没有任何问题，`func`参数作为一个函数对象，它然后调用其他两个参数，所有东西在我们的解释器里仅仅有条的工作。
+
+我知道你现在想的内容，在这已经写好了一个模板给你：
+> 亲爱的朋友（姓名）：还记得我曾经说过我会成为一个厉害的人并且做一些伟大的事情，还记得我吗？如今我的Monkey解释器成功了并且它支持函数，高阶函数、闭包和整型数学运算。总而言之：我从来没这么快乐过！
+
+我们做到了，我们创建了一个完整的Monkey解释器，它支持函数，函数调用，高阶函数和闭包。
 <h2 id="ch04-Trash-Out">4.11 垃圾回收</h2>
 
 <h1 id="ch05-Extending-the-Interpreter">5 拓展解释器</h1>
