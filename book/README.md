@@ -15,44 +15,44 @@
 - [1 前言](#ch01-introduction)
     - [1.1 Monkey 编程语言和解释器](#ch01-the-monkey-programming-language-and-interpreter)
     - [1.2 为什么使用 Go 语言](#ch01-why-go)
-    - [1.3 如何使用这本书](#ch01-How-to-Use-this-Book)
-- [2 词法分析器](#ch02-Lexing)
-    - [2.1 词法分析](#ch02-Lexical-Analysis)
-    - [2.2 定义Token](#ch02-Defining-Our-Tokens)
-    - [2.3 词法分析器](#ch02-The-Lexer)
-    - [2.4 拓展Token集和词法分析器](#ch02-Extending-Our-Token-Set-and-Lexer)
-    - [2.5 REPL编写](#ch02-Start-of-a-REPL)
-- [3 语法解析](#ch03-Parsing)
-    - [3.1 语法解析器](#ch03-Parsers)
-    - [3.2 为何不采用语法生成器](#ch03-Why-Not-a-Parser-Generator)
-    - [3.3 为Monkey编程语言编写语法解析器](#ch04-Writing-a-Parser-for-the-Monkey-Programming-Language)
-    - [3.4 解析Let语言](#ch03-Parsing-Let-Statement)
-    - [3.5 解析Return语句](#ch03-Parsing-Retrun-Statement)
-    - [3.6 解析表达式](#ch03-Parsing-Expression)
-    - [3.7 Pratt解析法如何工作](#ch03-How-Pratt-Parsing-Works)
-    - [3.8 拓展解析器](#ch03-Extending-The-Parser)
-    - [3.9 REPL](#ch03-Read-Parse-Print-Loop)
-- [4 计算](#ch04-Evaluation)
-    - [4.1 符号赋值](#ch04-Giving-Meaning-to-Symbols)
-    - [4.2 计算策略](#ch04-Strategies-of-Evaluation)
-    - [4.3 树遍历计算](#ch04-A-Tree-Walking-Interpreter)
-    - [4.4 表达对象](#ch04-Representing-Objects)
-    - [4.5 表达式计算](#ch04-Evaluaiton-Expression)
-    - [4.6 条件语句](#ch04-Conditionals)
-    - [4.7 返回语句](#ch04-Return-Statement)
-    - [4.8 错误处理](#ch04-Error-Handling)
-    - [4.9 绑定和环境](#ch04-Binding-and-Environment)
-    - [4.10 函数和函数调用](#ch04-Function-and-Function-Call)
-    - [4.11 垃圾回收](#ch04-Trash-Out)
-- [5 拓展解释器](#ch05-Extending-the-Interpreter)
-    - [5.1 数据类型和函数](#ch05-Data-Type-and-Functions)
-    - [5.2 字符串](#ch05-Strings)
-    - [5.3 内置函数](#ch05-Built-in-Functions)
-    - [5.4 数组](#ch05-Array)
-    - [5.5 哈希表](#ch05-Hashes)
-    - [5.6 完结](#ch05-the-Grand-Finale)
-- [6 资源](#ch06-Resources)
-- [7 反馈](#ch07-Feedback)
+    - [1.3 如何使用这本书](#ch01-how-to-use-this-book)
+- [2 词法分析器](#ch02-lexing)
+    - [2.1 词法分析](#ch02-lexical-analysis)
+    - [2.2 定义Token](#ch02-defining-our-tokens)
+    - [2.3 词法分析器](#ch02-the-lexer)
+    - [2.4 拓展Token集和词法分析器](#ch02-extending-our-token-set-and-lexer)
+    - [2.5 REPL编写](#ch02-start-of-a-repl)
+- [3 语法解析](#ch03-parsing)
+    - [3.1 语法解析器](#ch03-parsers)
+    - [3.2 为何不采用语法生成器](#ch03-why-not-a-parser-generator)
+    - [3.3 为Monkey编程语言编写语法解析器](#ch04-writing-a-parser-for-the-monkey-programming-language)
+    - [3.4 解析Let语言](#ch03-parsing-let-statement)
+    - [3.5 解析Return语句](#ch03-parsing-retrun-statement)
+    - [3.6 解析表达式](#ch03-parsing-expression)
+    - [3.7 Pratt解析法如何工作](#ch03-how-pratt-parsing-works)
+    - [3.8 拓展解析器](#ch03-extending-the-parser)
+    - [3.9 REPL](#ch03-read-parse-print-loop)
+- [4 计算](#ch04-evaluation)
+    - [4.1 符号赋值](#ch04-giving-meaning-to-symbols)
+    - [4.2 计算策略](#ch04-strategies-of-evaluation)
+    - [4.3 树遍历计算](#ch04-a-tree-walking-interpreter)
+    - [4.4 表达对象](#ch04-representing-objects)
+    - [4.5 表达式计算](#ch04-evaluaiton-expression)
+    - [4.6 条件语句](#ch04-conditionals)
+    - [4.7 返回语句](#ch04-return-statement)
+    - [4.8 错误处理](#ch04-error-handling)
+    - [4.9 绑定和环境](#ch04-binding-and-environment)
+    - [4.10 函数和函数调用](#ch04-function-and-function-call)
+    - [4.11 垃圾回收](#ch04-trash-out)
+- [5 拓展解释器](#ch05-extending-the-interpreter)
+    - [5.1 数据类型和函数](#ch05-data-type-and-functions)
+    - [5.2 字符串](#ch05-strings)
+    - [5.3 内置函数](#ch05-built-in-functions)
+    - [5.4 数组](#ch05-array)
+    - [5.5 哈希表](#ch05-hashes)
+    - [5.6 完结](#ch05-the-grand-finale)
+- [6 资源](#ch06-resources)
+- [7 反馈](#ch07-feedback)
 
 
 <h1 id="ch01-introduction">1 前言</h1>
@@ -192,7 +192,7 @@ Go非常容易阅读和理解，你不需要理解这本书中编写的Go语言�
 所有的原因都是书中的代码能够让你更好的理解（概念上的和技术层面上的）和重复使用它们。如果你在读完这本书后，打算用其他语言写自己的解释器，那将会是非常容易上手的。通过这本书，我想给你提供一个理解和构造一个解释器的起点。
 
 
-<h2 id="ch01-How-to-Use-this-Book">1.3 如何使用这本书</h2>
+<h2 id="ch01-how-to-use-this-book">1.3 如何使用这本书</h2>
 这本书既不是一本参考手册，也不是关于描述实现解释器相关概念的论文的集合。这本书用来从头到尾，按照我推荐的顺序阅读，同时输入和修改提供的代码。
 
 每一个章节是建立在先前章节上的，主要包括代码和内容。在每一章节中我们一点一点地构建我们的解释器。为了使它更容易理解，本书提供了一个叫`code`的文件夹，如果你购买的本书没有改文件夹，你可以从下面的地址下载到
@@ -207,26 +207,29 @@ Go非常容易阅读和理解，你不需要理解这本书中编写的Go语言�
 我同样推荐使用[direnv](https://direnv.net)，它能根据你的 `.envrc` 文件改变你的shell环境。本书的`code`文件夹中的每一个子文件中都有一个 `.envrc`文件，它用来将`GOPATH` 添加到其子文件下中，它将允许我们不同章节下的代码都能够工作。
 让我们开始行动吧！
 
-<h1 id="ch02-Lexing">2 词法分析器</h1>
-<h2 id="ch02-Lexical-Analysis">2.1 词法分析</h2>
-<h2 id="ch02-Defining-Our-Tokens">2.2 定义Token</h2>
-<h2 id="ch02-The-Lexer">2.3 词法分析器</h2>
-<h2 id="#ch02-Extending-Our-Token-Set-and-Lexer">2.4 拓展Token集和词法分析器</h2>
-<h2 id="#ch02-Start-of-a-REPL">2.5 REPL编写</h2>
+<h1 id="ch02-lexing">2 词法分析器</h1>
+<h2 id="ch02-lexical-analysis">2.1 词法分析</h2>
+<h2 id="ch02-defining-our-tokens">2.2 定义Token</h2>
+<h2 id="ch02-the-lexer">2.3 词法分析器</h2>
+<h2 id="ch02-extending-our-token-set-and-lexer">2.4 拓展Token集和词法分析器</h2>
+<h2 id="ch02-start-of-a-repl">2.5 REPL编写</h2>
 
-<h1 id="ch03-Parsing">3 语法解析</h1>
-<h2 id="ch03-Parsers">3.1 语法解析器</h2>
-<h2 id="ch03-Why-Not-a-Parser-Generator">3.2 为何不采用语法生成器</h2>
-<h2 id="h04-Writing-a-Parser-for-the-Monkey-Programming-Language">3.3 为Monkey编程语言编写语法解析器</h2>
-<h2 id="ch03-Parsing-Let-Statement">3.4 解析Let语言</h2>
-<h2 id="ch03-Parsing-Retrun-Statement">3.5 解析Return语句</h2>
-<h2 id="ch03-Parsing-Expression)">3.6 解析表达式</h2>
-<h2 id="ch03-How-Pratt-Parsing-Works">3.7 Pratt解析法如何工作</h2>
-<h2 id="ch03-Extending-The-Parser">3.8 拓展解析器</h2>
-<h2 id="ch03-Read-Parse-Print-Loop">3.9 REPL</h2>
+<h1 id="ch03-parsing">3 语法解析</h1>
+<h2 id="ch03-parsers">3.1 语法解析器</h2>
+<h2 id="ch03-why-not-a-parser-generator">3.2 为何不采用语法生成器</h2>
+<h2 id="h04-writing-a-parser-for-the-monkey-programming-language">3.3 为Monkey编程语言编写语法解析器</h2>
+<h2 id="ch03-parsing-let-statement">3.4 解析Let语言</h2>
+<h2 id="ch03-parsing-retrun-statement">3.5 解析Return语句</h2>
+<h2 id="ch03-parsing-expression)">3.6 解析表达式</h2>
+<h2 id="ch03-how-pratt-parsing-works">3.7 Pratt解析法如何工作</h2>
+<h2 id="ch03-extending-the-parser">3.8 拓展解析器</h2>
+<h2 id="ch03-read-parse-print-loop">3.9 REPL</h2>
+
 
 <h1 id="ch04-Evaluation">4 计算</h1>
-<h2 id="ch04-Giving-Meaning-to-Symbols">4.1 符号赋值</h2>
+
+<h2 id="ch04-giving-meaning-to-symbols">4.1 符号赋值</h2>
+
 终于到达这一章：计算。在 `REPL`中的 `E` 就是解释器在处理源代码的的过程中的最后一步。在这一步，源代码将会变得有意义。没有计算，诸如 `1+2`这样的表达式仅仅是一连串的字符，token或者代表表达式的树状结构，而并没有意味着任何事情，当然，我们都知道 `1+2` 变成 `3`, `3.5 > 1` 是 `true`, `5<1` 是 `false`, `put("Hello World!")` 将会输出友好的消息。
 
 计算的过程就是定义解释器如何将编程语言编程解释后的结果。
@@ -258,7 +261,8 @@ add(one(), two())
 这样微小的选择方式在本章中还有很多，我们将决定在 Monkey 编程语言中如何进行工作，并且我们的解释器如何计算源代码。
 
 或许你非常怀疑我告诉你写一个解析器非常好玩，但是请相信我，这事最重要的部分，在这部分Monkey编程语言将会变得有生命力起来，尤其是源代码变得运动起来，仿佛开始呼吸一样。
-<h2 id="ch04-Strategies-of-Evaluation">4.2 计算策略</h2>
+
+<h2 id="ch04-strategies-of-evaluation">4.2 计算策略</h2>
 计算这一部分也是实现解释器过程中变化最多的部分，无论哪一种语言的实现。当计算源代码的时候，有很多不同的策略可以供选择。在本书简单介绍解释器架构的时候，我已经提示到这一点，现在我们手上已经有了抽象语法树（AST），现在问题来了，接下来我们需要做些什么，如何去计算这一棵树？我们接下来看看不同的观点。
 
 在开始之前，值得注意的是解释器和编译器的界限是非常模糊的。常常来讲，解释器通常不离开可执行的环境（与此相关，编译器则脱离可执行环境）它并没有哪些现实中高优化的编程语言那么快。
@@ -286,7 +290,8 @@ WebKit Javascript的引擎 JavaScriptCore 和它的叫Squirrelfish同样采用�
 另一个例子就是Lua， 主要的实现方式是将其编译成字节码，然后在一个寄存器为基础的虚拟机上执行，在12年后，LuaJIT作为另外一种实现实现方式出现了。LuaJIT的实现者 Mike Pall的目标是创建一个尽可能快的Lua编译器。事实同样如此，通过JIT的方式将繁琐的字节码格式转换成不同基础架构的机器码，从各个性能测试来看，LuaJIT比原生的Lua解释器要快，而且不仅仅是一点点快，有时至少快50倍。
 
 所以所有编译器都是从很小的改进空间开始，这也是我们开始要做的原因。有很多方法来构建更快的解释器，但是将不会很容易理解，在这里我们将理解和开始着手构建。
-<h2 id="ch04-A-Tree-Walking-Interpreter">4.3 树遍历计算</h2>
+
+<h2 id="ch04-a-tree-walking-interpreter">4.3 树遍历计算</h2>
 我们将要构建一个遍历树解释器，以前面解析步骤完成构建好的抽象语法树，边遍历边进行解释，跳过将预处理和编译的步骤。
 
 我们的解释器将会和经典的Lisp解释器一样，我们采用的的设计受《计算机程序结构和描述》（The Structure and Interpretation of Computer Program）中描述的解释器的影响很大，尤其是关于环境的使用。但是这并不意味着我们想要去复制一个特定的解释器，如果你足够了解的话，我们是使用一个你在其他很多解释器中看得到的蓝图。这也是为什么这种特定的设计很流行的原因。它很容易的着手启动起来，也很容易理解和后期的拓展。
@@ -320,7 +325,8 @@ leftEvaluated = eval(astNode.Left)
 rightEvaluated = eval(astNode.Right)
 ```
 那么它们返回的是什么？返回值的类型又是什么？这个问题的答案就是：在我们的解释器中拥有哪些内部的对象系统？
-<h2 id="ch04-Representing-Objects">4.4 表达对象</h2>
+
+<h2 id="ch04-representing-objects">4.4 表达对象</h2>
 等一下，什么？你从来没有说过Monkey是面向对象的编程语言啊！是的，我从来没有说过并且它也不是面向对象的编程语言。那为什么我们需要一个“对象系统”呢，亦或者是“值系统”或者“对象描述”？答案是我们需要定义我们计算返回的值。我们需要一个系统来描述我们抽象语法树种的值或者我们在内存中计算的生成出来的内容。
 
 让我们来看看在接下来的Monkey代码中如何计算值
@@ -437,7 +443,9 @@ func (N *Null) Inspect() string { return "null" }
 `object.Null`与`object.boolean` 和 `object.Integer` 一样，除了它没有封装任何值。它代表了值得缺失。
 
 有了 `object.Null`, 我们的对象系统现在就可以代表布尔型、整型和空类型，对于我们开始`Eval` 函数足够了。
-<h2 id="ch04-Evaluaiton-Expression">4.5 表达式计算</h2>
+
+<h2 id="ch04-evaluaiton-expression">4.5 表达式计算</h2>
+
 好了， 开始编写我们的 `Eval` 函数。我们现有拥有了抽象语法树和赞新的对象系统，这些让我们开始记录我们在执行Monkey代码的时候遇到的值，是时候考试计算抽象语法树。
 
 这是我们 `Eval` 函数签名的第一版：
@@ -938,10 +946,12 @@ func evalIntegerInfixExpression(
 ```
 $ go test ./evalutor
 ok monkey/evalutor 0.007s
+```
 
 好的，我们继续前进，我们过会儿会再回到这边，以便支持哪些能够生成布尔值的操作符`==`,`!=`,`<`和`>`。
 
 我们可以拓展我们的`TestEvalBooleanExpression`方法，为上述的操作符增加测试用例，*因为它们都能生成布尔型值。
+
 ```go
 //evaluator/evaluator_test.go
 func TestEvalBooleanExpression(t *testing.T){
@@ -962,6 +972,7 @@ func TestEvalBooleanExpression(t *testing.T){
     }
 }
 ```
+
 除此之外，我们还需要增加一些代码在 `evalIntegerInfixExpression`函数中，它们能够保证测试能够通过：
 ```go
 // evaluator/evaluator.go
@@ -985,6 +996,8 @@ func evalIntegerInfixExpression(
         return NULL
     }
 }
+```
+
 `nativeBoolToBoolean`方法是我们用在布尔字面值的时候，现在我们在比较未封装的值比较的过程中又重新使用了它们。
 
 至少对于整数来说，我们现在已经完全支持八种中缀操作符，剩下的工作就是支持布尔型操作数。
@@ -1048,6 +1061,7 @@ func evalInfixExpression(
     }
 }
 ```
+
 是的，我们只是在已经存在的`evalInfixExpression`函数中增加四行代码，测试就通过了，我们通过指针的比较来检查两个布尔型值之间的相等。这样做的原因是我们指向布尔型的指针只有两个`TRUE`和`FALSE`，如果有其他值也是`TRUE`，也就是内存地址一样，它就是`true`。对于`NULL`也是同样的道理。
 
 但是对于整型或者其他数据类型并不奏效，因为对于`*object.Integer`我们每次都分配内存来生成`object.Integer`实例因而我们就能有新的指针。我们无法比较指向不同实例的指针。我们无法比较指向不同实例的指针，否则像`5==5`就会是false，而这个并不是我们想要的。在这种情况下，我们要明确的指出是比较值而不是封装值得对象。
@@ -1057,6 +1071,7 @@ func evalInfixExpression(
 想象一下，如果十年之后，Monkey语言变得出名了，许多人开始来研究讨论。忽视了这个半吊子地设计这门语言，那么我们就变得非常出名了。 有人就是去StackOverflow上去问，为什么在Monkey语言中，整型比较会比布尔型比较慢得多。你和我，或者其他人就会回答到，因为在Monkey语言中，不允许使用指针比较整型数据，在比较之前，需要拆封它们的值，然后进行比较。相对而言，布尔型操作比较就比较快。 我们将会加上答案的最后加上这么一句”因为源代码是我写的“。
 
 有点跑题了，回到正题。我们做到了，相当高兴，差不多都可以开始庆祝了。是时候开香槟庆祝了吗？对的，看看我们的解释器现在能做什么！
+
 ```
 $go run main.go
 Hello mrnugget! This is the monkey programming language!
@@ -1073,7 +1088,7 @@ false
 false
 ```
 到目前为止，我们已经完成了一个函数计算器， 接下来让我继续增加，使它变得更像一个编程语言。
-<h2 id="ch04-Conditionals">4.6 条件语句</h2>
+<h2 id="ch04-conditionals">4.6 条件语句</h2>
 你将会惊奇在我么的计算器中实现条件语句如此简单，实现他们唯一的难点就是知道在何时实现他们，整个条件语句最关键点就是在于条件判断，而且计算过程与条件判断息息相关，考虑到这种情况：
 ```go
 if (x>10){
@@ -1185,7 +1200,7 @@ Feel free to type in commands
 >> if ((100/2) + 250 * 2==1000){9999}
 9999
 ```
-<h2 id="ch04-Return-Statement">4.7 返回语句</h2>
+<h2 id="ch04-return-statement">4.7 返回语句</h2>
 接下来的返回语句，这个在任何标准的计算器都不会出现的，但是`Monkey`有。 它不仅仅在函数体而且作为`Monkey`语言的顶层的语句。 它在任何地方使用都不会有任何影响，因为它不改变任何东西。返回语句将停止后面的所有计算，并且带着它计算的值离开。
 
 这儿有个一个最上层的返回语句：
@@ -1299,6 +1314,7 @@ FAIL monkey/evalutor 0.007s
 我敢打赌你已经发现我们当前的版本出现的问题，但是还是让我说出来：如果我们有嵌套的语句块（这是在Money语言中完全合法的）我们不能一遇到`object.ReturnValue`就将封装的值取出来，因为我们还要继续跟踪该值，直到我们到达最外面一层语句块，停止执行。
 
 在当前版本中非嵌套的语句块可以很好地执行，但是遇到嵌套的语句块，首先要做的事承认我们不能再继续使用`evalStatement`函数来执行语句块。这也是我们为什么要重新命名`evalProgram`函数让其不是那么泛化。
+
 ```go
 // evaluator/evaluator.go
 func Eval(node ast.Node) object.Objcet {
@@ -1347,7 +1363,8 @@ ok monkey/evalutor 0.007s
 ```
 返回语句完成，我们终于不再是构建一个计算器。由于`evalProgram`和`evalBlockStatement`对我们来讲还是很陌生，我们将继续研究它们。
 
-<h2 id="ch04-Error-Handling">4.8 错误处理</h2>
+<h2 id="ch04-error-handling">4.8 错误处理</h2>
+
 还记得我们先前返回`NULL`对象， 我说过你现在不用担心这个，过会我们会回来处理的。现在正是处理真正的错误时候，以免后面太迟了。总体上来讲，我们只需要回退一小部分先前的代码。老实地说，我先前并没有一开始就实现错误处理是因为我认为实现表达式比处理处理有趣多了。但是现在我们必须把它加上，否则将来调试起来我们的解释器将会非常笨重。
 
 首先，让我们先定义一下什么是真正的错误处理机制，这个并不是什么用户自定义异常，而是内部的错误处理。是那些错误操作符，不支持的操作运算亦或者是在执行过程中出现的用户或者内部的异常。
@@ -1555,7 +1572,7 @@ func evalIfExpression(ie *ast.IfExpression) object.Object{
 }
 ```
 好了，错误异常处理完毕。
-<h2 id="ch04-Binding-and-Environment">4.9 绑定和环境</h2>
+<h2 id="ch04-binding-and-environment">4.9 绑定和环境</h2>
 接下来我们要做的事是增加绑定用来以便支持`Let`语句。但是不仅仅我们需要支持`Let`语句，还要支持变量的执行。用一个代码片段来说明我们要去执行的内容：
 ```go
 let x = 5 * 5;
@@ -1729,8 +1746,9 @@ Feel free to type in commands
 245025
 ```
 
-<h2 id="h04-Function-and-Function-Call">4.10 函数和函数调用</h2>
+<h2 id="ch04-function-and-function-call">4.10 函数和函数调用</h2>
 这一节是我们一直工作努力的方向， 我们将在我们的解释器中增加对函数和函数调用的支持。当我们完成这一小节，我们就能在`REPL`中做如下的操作：
+
 ```
 >> let add = fn(a, b, c, d) { return a + b + c + d};
 >> add(1, 2, 3, 4)
@@ -1755,6 +1773,7 @@ Feel free to type in commands
 >> addTwo(2);
 4
 ```
+
 是的，接下来我们将要把上述的所有功能全部实现。
 
 从目前来讲我们已经完成的工作来看，我们还需要完成其他两件事情：一是在对象系统中对应我们的函数表达；另外一件是在`Eval`函数中增加函数调用支持。
@@ -2101,16 +2120,64 @@ ERROR: identifier not found: x
 > 亲爱的朋友（姓名）：还记得我曾经说过我会成为一个厉害的人并且做一些伟大的事情，还记得我吗？如今我的Monkey解释器成功了并且它支持函数，高阶函数、闭包和整型数学运算。总而言之：我从来没这么快乐过！
 
 我们做到了，我们创建了一个完整的Monkey解释器，它支持函数，函数调用，高阶函数和闭包。
-<h2 id="ch04-Trash-Out">4.11 垃圾回收</h2>
+<h2 id="ch04-trash-out">4.11 垃圾回收</h2>
+在本书开始阶段，我保证我们会亲自构建一个函数式解释器而不会走任何捷径，从零开始而不使用任何第三方工具。我们的确做到了，但是还是内容需要澄清一下。
 
-<h1 id="ch05-Extending-the-Interpreter">5 拓展解释器</h1>
-<h2 id="ch05-Data-Type-and-Functions">5.1 数据类型和函数</h2>
-<h2 id="ch05-Strings">5.2 字符串</h2>
-<h2 id="ch05-Built-in-Functions">5.3 内置函数</h2>
-<h2 id="ch05-Array">5.4 数组</h2>
-<h2 id="ch05-Hashes">5.5 哈希表</h2>
-<h2 id="ch05-the-Grand-Finale">5.6 完结</h2>
+考虑运行一下Monkey代码片段会发生什么事情：
+```
+let counter = fn(x){
+    if (x > 100){
+        return true;
+    } else {
+        let foobar = 9999;
+        counter(x+1)；
+    }
+};
+counter(0)
+```
+显然，它会返回一个`true`在执行函数体101遍后，但是在最后一遍递归返回时候发生了许多事情：
 
-<h1 id="ch06-Resource">6 资源</h1>
-<h1 id="ch07-Feedback">7 反馈</h1>
+第一件事执行`if-else`表达式条件：`x>100`，如果它的生成值不是真值，那么`else`分支将会被执行。在此之中的整型字面值`9999`将会绑定到标识符`foobar`，而它从未被引用过。而是`x+1`被执行了，结果导致调用`Eval`函数被调用，并且调用`counter`，如此往复直至`x>100`判断为`TRUE`。
+
+问题的关键是每一次调用`counter`，将会有许多对象被分配，或者将`Eval`函数的内容放入我们的对象系统。 每一次执行`counter`的函数体会带来`object.Integer`被分配和实例化，例如这些未被使用的`9999`整型和`x+1`的结果。甚至字面值`100`和`1`在每次执行`counter`的函数体时候也会产生新的`object.Integer`对象。
+
+如果我们修改我们的`Eval`函数并且记录跟踪每一个`&object.Integer{}`实例，我们将会看到运行这个短小的代码实例差不多400多次的`object.Integers`分配。
+
+那么问题在哪呢？
+
+我们的对象存储在内存中，使用的对象越多，需要的内存越多。尽管例子中的对象的数量相对于其他程序非常少，但是内存不是无限的。
+
+每次调用`counter`函数，我们解释器需要的内存就会增加，直至将内存全部用尽然后操作系统杀死这个程序。但是我们在运行上面的代码片段并对内存监控，发现它并不是持续上涨并且也不是下降。既不是上升也不是下降，这是为什么？
+
+问题的答案就是我不得不讨论的：我们重用了Go语言额垃圾回收机制并且作为我们Monkey语言的垃圾回收机制，这些我们不需要自己完成。
+
+Go语言垃圾回收机制（GC）就是我们为什么不会用完内存的原因，它帮我们管理内存。尽管我们调用`counter`函数很多次，我们增加了很多未被使用的整型字面值和分配的对象，我们不会用光内存。因为GC记录每一个`object.Integer`是否仍然可达。当它注意到一个对象不可达后，它释放该内存使之可以再次使用。
+
+上述的例子生成了很多整型对象，但是在调用`counter`后，它们都不再可达。字面值`1`和`100`同无意义的`9999`绑定的`foobar`，在`counter`返回后这些对象将不会可达。在上述例子中`1`和`100`很显然它不再可达，因为它们并没有绑定任何标志符。但是`9999`绑定的`foobar`不可达的原因是当函数返回时，它超出了作用域。为函数体执行而创建的环境也被销毁（这些都是GC完成的）。
+
+这些不可达的对象是不可达的并且占据着内存，这也是GC收集他们并且释放它们使用的内存。
+
+这些对我们来讲非常有用，帮助我们省下了很多工作。如果我们编写我们解释器使用C语言，在那里我们将不会拥有GC，我们需要自己为解释器的用户实现内存管理。
+
+那么实现这个GC需要怎么做？简单来讲：记录每个对象分配和它的引用，留下足够的内存足够为将来对象的分配并且归还那些不在需要的对象的内存。最后最重要的一点是，如果没有这个机制，将会泄露内存并且最终用光内存。
+
+有很多方法能够实现上述要求，包含了很多算法和实现。比如，有一种基础的“标记清除”算法。为了实现它需要考虑是GC是否为分代GC，是否为STW类型GC还是并行GC，如何组织内存如何处理内存碎片。尽管考虑上述所有需求，高效的GC算法事项仍然需要很多工作。
+
+你或许会问自己：**在这我们是使用Go语言的GC，那我们能不能自己编写GC而不用GO语言的？**
+
+不幸的是，不能这样做。我们需要禁用Go语言的GC并找到方法来接管它所有的工作。说起来容易做起来难。这是巨大的工作量，需要小心地考虑内存分配和释放问题。
+
+这也是我决定在本书不增加 *让我们编写我们的GC而不是Go的GC*的小节而是重新使用Go语言的GC。垃圾回收是一个巨大的主题并且超出了本书讨论的返回。但是我希望本小节给你GC大致映像以及它解决了什么问题，或许你知道了如果你想将这个解释器转移到其他宿主语言上需要考虑什么。不管怎样，我们的解释器完成了，剩下的就是拓展，增加一些数据类型和方法使之能够更加好用。
+
+
+<h1 id="ch05-extending-the-interpreter">5 拓展解释器</h1>
+<h2 id="ch05-data-type-and-functions">5.1 数据类型和函数</h2>
+<h2 id="ch05-strings">5.2 字符串</h2>
+<h2 id="ch05-built-in-functions">5.3 内置函数</h2>
+<h2 id="ch05-array">5.4 数组</h2>
+<h2 id="ch05-hashes">5.5 哈希表</h2>
+<h2 id="ch05-the-grand-finale">5.6 完结</h2>
+
+<h1 id="ch06-resource">6 资源</h1>
+<h1 id="ch07-feedback">7 反馈</h1>
 
