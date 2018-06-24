@@ -2172,7 +2172,102 @@ Go语言垃圾回收机制（GC）就是我们为什么不会用完内存的原�
 
 <h1 id="ch05-extending-the-interpreter">5 拓展解释器</h1>
 <h2 id="ch05-data-type-and-functions">5.1 数据类型和函数</h2>
+尽管我们的解释器非常棒，拥有一些很炫酷的特性比如一等函数和闭包，但是Monkey语言的用户能够使用的数据类型只有整型和布尔型。如果习惯其他编程语言，这个将会非常不方便。本章中我们将会改变这种状况，我们会增加一些新的数据类型。
+
+这样做的好处是能够帮助我们重新回顾我们的解释器，我么将会增减新的token，修改我们的词法分析器，拓展我们的语法解析器，最终帮我们我们的解释器和对象系统支持这些数据类型。
+
+好消息是这些数据类型已经在Go语言中存在了，那就意味着我们只需要让让它们在Monkey语言中可以使用即可。我们需要从零开始完成，这不是非常困难。由于我们本书的名称不是“使用Go语实现常见的数据结构”
+
+除此之外，我们会通过增加一些新的函数以便让我们的解释器更加强大。当然作为解释器的用户可以定义我们想要完成的函数，但是这些会限制我们能够做的工作。新的函数叫做内置函数，它们非常强大，由于它们能够方位Monkey语言的内部工作机制。
+
+首先我们需要增加的数据类型是字符串类型，几乎每个编程语言都支持该类型，因此Monkey语言也应该拥有字符串。
+
 <h2 id="ch05-strings">5.2 字符串</h2>
+在Monkey语言中，字符串就是一系列字符。它们是一等类型，可以绑定标识符、作为函数参数调用或者函数的返回值，它们看上去和其他编程语言一样：用双引号包含起来的字符。
+
+除了数据类型本身，本小节中，我们也将增加字符串连接操作，通过中缀表达式`+`完成。
+
+最终我们的效果如下：
+```
+$ go run main.go
+Hello mrnugget! This is the monkey programming language!
+Feel free to type in commands
+>> let firstName = "Thorsten"
+>> let lastName = "Ball"
+>> let fullName = fn(first, last) { first + " " + last};
+>> fullName(firstName, lastName)
+Thorsten Ball
+```
+**词法解析器支持字符串**
+首先要做的是在词法解析器中支持字符串字面值。字符串的基本数据结构如下所示：
+
+```
+"<sequence of characters>"
+```
+是不是很简单，就是一系列由双引号包含起来的一些列字符。
+
+我们想要词法解析器做的就是在我们处理每一个字面的字符串，所以`"Hello World"`就会变成单一的token.而不是三个`"`,`Hello World`和`"`token，使用单个Token可以在我们的语法解析器中处理起来变得容易。所以我们需要在词法解析器部分做大量的工作。
+
+当然，使用多个token也是可以的，对有些情况和解析器非常有用，我们就可以在标识符周围使用`"`，但是我们这里，我们已经拥有了token `INT` 作为整型，它将自身的字符串字面值作为`Literal`字段。
+
+现在开始我们对我们的`token`和词法分析器做一步处理，从最开始我们还没有动过它们，我确信它们它们工作得很好。
+
+首先要做的的是将`STRING` token类型增加到 `token` 包中:
+
+```go
+//token/token.go
+const (
+// [...]
+    STRING = "STRING"
+// [...]
+)
+```
+与此同时，我们为词法解析器增加一些测试用例，以便是不是正确的支持字符串类型。因此我们拓展我们`TestNextToken`测试函数的`input`内容：
+```go
+func TestNextToken2(t *testing.T) {
+	input := `let five=5;
+let ten =10;
+let add = fn(x, y){
+  x+y;
+};
+let result = add(five, ten);
+!-/*5;
+5<10>5;
+
+if(5<10){
+	return true;
+}else{
+	return false;
+}
+10 == 10;
+10 != 9;
+"foobar"
+"foo bar"
+`
+	tests := []struct {
+		expectedType    token.TokenType
+		expectedLiteral string
+	}{
+// [...]
+		{token.STRING, "foobar"},
+		{token.STRING, "foo bar"},
+        {token.EOF, ""},
+// [...]
+	}
+// [...]
+}
+```
+现在`input`多了两行包含字符串字面值，我们想把他们变成token。`foobar`确保词法解析器能够工作；`foo bar`也同样能够工作，尽管中间包含了一个空白字符。
+
+当然目前测试时失败的，因为我们还没在词法解析器中做任何东西：
+```
+$ go test ./lexer
+--- FAIL: TestNextToken (0.00s)
+lext_test.go:122: tests[172] - tokenType wrong. expected="STRING", got="ILLEGAL"
+FAIL
+FAIL monkey/lexer 0.006s
+```
+
 <h2 id="ch05-built-in-functions">5.3 内置函数</h2>
 <h2 id="ch05-array">5.4 数组</h2>
 <h2 id="ch05-hashes">5.5 哈希表</h2>
