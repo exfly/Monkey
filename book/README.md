@@ -2268,6 +2268,172 @@ FAIL
 FAIL monkey/lexer 0.006s
 ```
 
+想要让测试通过比你想象中的还要简单，我们所需要做的就是在词法解析器中为`"`增加分支和一些简单的帮助方法
+```go
+//lexer/lexer.go
+func (l *Lexer) NextToken() token.Token {
+// [...]
+    switch l.ch {
+// [...]
+    case '"':
+        tok.Type = token.STRING
+        tok.Literal = l.readString()
+// [...]
+    }
+// [...]
+}
+func (l *Lexer) readString() string {
+    position := l.position + 1
+    for {
+        l.readChar()
+        if l.ch == '"' {
+            break
+        }
+    }
+    return l.input[position:l.position]
+}
+```
+这些所做的并没有什么神秘的：一个`case`分支和一个帮助函数，它不停的调用`readChar`函数直至遇到另外一个双引号。
+
+如果你认为这样比较简单，可以去增加转义字符的支持比如`"hello \"world\""`，`"hello \n world"`和`"hello\t\t\tworld"`等等。
+与此同时，我们的测试通过了
+```
+$go test ./lexer
+ok monkey/lexer 0.006s
+```
+好的，我们的词法解析器可以处理字面字符串了，接下来要做的事如何在语法解析器中处理它们。
+
+**解析字符串**
+为了让我们的语法解析器能够将`token.STRING`转变为抽象语法树的节点，我们需要定义节点。幸运的是，定义这个节点非常简单，它看上去和`ast.IntegerLiteral`非常相似，除了`Value`字段不是`int64`类型而是`string`类型。
+```go
+//ast/ast.go
+type StringLiteral struct {
+    Token token.Token
+    Value string
+}
+func (sl *StringLiteral) expressionNode() {}
+func (sl *StringLiteral) TokenLiteral() string { return sl.Token.Literal}
+func (sl *StringLiteral) String() string { return sl.Token.Literal }
+```
+当然，字面字符串是表达式而不是语句，它们执行得到字符串。
+
+有了上面的定义，我们编写一些测试来确保我们的解析器知道能够处理`token.STRING` token 并且输出`*ast.StringLiteral`
+
+```go
+//parse/parser_test.go
+func TestStringLiteralExpression(t *testing.T){
+    input := `"hello world";`
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+
+	stmt := program.Statements[0].(*ast.ExpressionStatement)
+	literal, ok := stmt.Expression.(*ast.StringLiteral)
+	if !ok {
+		t.Fatalf("exp not *ast.StringLiteral. got=%T", stmt.Expression)
+	}
+	if literal.Value != "hello world" {
+		t.Errorf("literal.Value not %q, got=%q", "hello world", literal.Value)
+	}
+}
+```
+运行测试仍然是解析错误
+```
+$ go test ./parser
+-- FAIL: TestStringLiteralExpression(0.00s)
+    parser_test.go:888: parser has 1 errors
+    parser_test.go:890: parser error: "no prefix parse function for STRING found"
+FAIL
+FAIL monkey/parser 0.007s
+```
+在前面我们已经看到很多次了并且我们也知道如何处理它们，我们所需要做的就是为在`prefixParsefn`注册`token.STRING`处理的函数。 这个解析函数返回一个`*ast.StringLiteral`。
+```go
+//parser/parser.go
+func New(l *lexer.Lexer) *Parser{
+//[...]
+    p.registerPrefix(token.STRING, p.parseStringLiteral)
+//[...]
+}
+func (p *Parser) parseStringLiteral() ast.Expression{
+    return &ast.StringLiteral{Token: p.curToken, Value: p.curToken.Literal}
+}
+```
+三行新代码就能够让我们的测试通过了：
+```
+$go test ./parser
+ok monkey/parser 0.007s
+```
+现在我们的解析器将字面字符串变成`token.STRING`然后在解析器中将其变成`*ast.StringLiteral`节点。现在我们已经准备在对象系统和执行器中做出一些变化。
+
+**执行字符串**
+在我们对象系统中表达字符串和整型一样简单，但是最大的原因是我们重用了Go语言的string类型。想想一下在客户端语言中增加一种宿主语言没有的数据结构，这将是需要大量的工作，比如C语言。但是现在我们只需要一个包含字符串类型新的对象。
+```go
+//object/object.go
+const (
+//[...]
+    STRING_OBJ = "STRING"
+)
+type String struct {
+    Value string
+}
+func (s *String) Type() ObjectType { return STRING_OBJ }
+func (s *String) Inspect() string { return s.Value }
+```
+在我们的执行器中需要的做的就是将`*ast.StringLiteral`变成`object.String`对象， 接下来额测试表明我们的工作非常简单：
+```go
+//evalutor/evalutor_test.go
+func TestStringLiteral(t *testing.T) {
+	input := `"Hello World!"`
+	evaluated := testEval(input)
+	str, ok := evaluated.(*object.String)
+	if !ok {
+		t.Fatalf("object is not String. got=%T(%+v)",
+			evaluated, evaluated)
+	}
+	if str.Value != "Hello World!" {
+		t.Errorf("String has wrong value. got=%q", str.Value)
+	}
+}
+```
+`Eval`函数调用返回的不是`*object.String`而是一个`nil`。
+```
+$ go test ./evalutor
+--- FAIL: TestStringLiteral (0.00s)
+evalutor_test.go:317: object is not string. got=<nil>(nil)
+FAIL
+FAIL monkey/evalutor 0.007s
+```
+让测试通过只需要增加的代码比解析器中还要少，就两行：
+```go
+//evaluator/evaluator.go
+func Eval(node ast.Node, env *object.Environment) object.Object {
+//[...]
+    case *ast.StringLiteral:
+        return &object.String{Value:node.Value}
+}
+```
+这样做可以让我们的测试通过，并且可以在REPL中使用字符串
+```
+$ go run main.go
+Hello mrnugget! This is the monkey programming language!
+Feel free to type in commands
+>> "Hello World!"
+Hello World
+>> let hello = "Hello there, fellow Monkey users and fans"
+>> hello
+Hello there, fellow Monkey users and fans!
+>> let giveMeHello = fn() {"Hello"}
+>> giveMeHello()
+Hello!
+```
+现在在解析器中我们完全支持字符串了，获取我应该这样
+```
+>> "This is amazing"
+This is amazing
+```
+**字符串拼接**
+
 <h2 id="ch05-built-in-functions">5.3 内置函数</h2>
 <h2 id="ch05-array">5.4 数组</h2>
 <h2 id="ch05-hashes">5.5 哈希表</h2>
