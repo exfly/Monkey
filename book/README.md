@@ -2304,6 +2304,7 @@ ok monkey/lexer 0.006s
 好的，我们的词法解析器可以处理字面字符串了，接下来要做的事如何在语法解析器中处理它们。
 
 **解析字符串**
+
 为了让我们的语法解析器能够将`token.STRING`转变为抽象语法树的节点，我们需要定义节点。幸运的是，定义这个节点非常简单，它看上去和`ast.IntegerLiteral`非常相似，除了`Value`字段不是`int64`类型而是`string`类型。
 ```go
 //ast/ast.go
@@ -2367,6 +2368,7 @@ ok monkey/parser 0.007s
 现在我们的解析器将字面字符串变成`token.STRING`然后在解析器中将其变成`*ast.StringLiteral`节点。现在我们已经准备在对象系统和执行器中做出一些变化。
 
 **执行字符串**
+
 在我们对象系统中表达字符串和整型一样简单，但是最大的原因是我们重用了Go语言的string类型。想想一下在客户端语言中增加一种宿主语言没有的数据结构，这将是需要大量的工作，比如C语言。但是现在我们只需要一个包含字符串类型新的对象。
 ```go
 //object/object.go
@@ -2432,8 +2434,74 @@ Hello!
 >> "This is amazing"
 This is amazing
 ```
+
 **字符串拼接**
 
+拥有字符串类型相当不错，但是除了创建它们好像并不能做些其他的什么。我们现在就做出一些改变，我们将我们的解释器提供字符串拼接的功能，通过支持`+`操作符和字符串操作符即可。
+
+我么也同样拓展我们的`TestErrorHanding`函数来确保我们只增加了`+`操作符。
+```go
+//evalutor/evalutor_test.go
+func TestErrorHanding(t *testing.T){
+    tests :=[]struct {
+        input string
+        expectedMssage string
+    }{
+//[...]
+        {
+            `"Hello" - "World"`,
+            "unknow operator: STRING - STRING"
+
+        },
+//[...]        
+    }
+//[...]
+}
+```
+这个测试是失败的，但是我们的拼接测试还是失败的。
+```
+$ go test ./evaluator
+--- FAIL: TestStringConcatentation (0.00s)
+evalutor_test.go:336: object is not String. got= *object.Error(&{Message:unknow operator: STRING + STRING})
+FAIL
+FAIL monkey/evalutor 0.007s
+```
+我们需要改变的地方是`evalInfixExpression`。在这里我们需要在已经存在的switch语句中增加分支，以便能够执行操作符两边都是字符串类型的操作。
+
+```go
+//evalutor/evalutor.go
+func evalStringInfixExpression(
+    operator string,
+    left, right object.Object,
+)object.Object {
+    if operator != "+" {
+        return newError("unknow operator: %s %s %s",left.Type(), operator, right.Type())
+    }
+    leftVal := left.(*object.String).Value
+    rightVal := right.(*object.String).Value
+    return &object.String{Value: leftVal + rightVal}
+}
+```
+首先我们要做的事检查是否为正确的操作符，如果它支持`+`操作符，我们将字符串对象封装起来，并且拼接左右两个操作数变成新的字符串。
+
+如果我们想要支持更多的字符串操作，我们可以在这边添加。比如我们想要增减支持字符串比较的操作符`==`和`!=`。指针的比较并不起作用，至少不是我们想要的的结果，字符串的比较我们需要比较它们的值而不是指针。
+
+这样我们的测试通过了
+```
+$ go test ./evaluator
+ok monkey/evalutor 0.007s
+```
+现在我们能够使用字面字符串了，我们可以传递它们，绑定它们，将它们从函数中返回，也可以拼接它们。
+```go
+>> let makeGreeter = fn(greeting) { fn (name) { greeting + "" + name + "!" }}
+>> let hello = makeGreeter("Hello")
+>> hello("Thorsten")
+Hello Thorsten!
+>> let heythere = makeGreete("Hey There")
+>> heythere("Thorsten")
+Hey there Thorsten!
+```
+现在我们可以说字符串在我们的解释器中工作非常棒，但我们仍然可以增加新的东西来帮助它们工作。
 <h2 id="ch05-built-in-functions">5.3 内置函数</h2>
 <h2 id="ch05-array">5.4 数组</h2>
 <h2 id="ch05-hashes">5.5 哈希表</h2>
