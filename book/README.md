@@ -2702,6 +2702,41 @@ ERROR: argument to `len` no supported. got INTEGER
 ```
 完美，我们第一个内置函数可以工作了。
 <h2 id="ch05-array">5.4 数组</h2>
+在这一小节中我们将为我们的Monkey解释器增加数据类型是数据，在Monkey中，数据是可能不同类型元素组成的有序列表。数组中的每一个元素都可以被单独被访。数组可以由字面表达方式：一系列由冒号隔开的元素，并且被包含在方括号中。
+
+初始化一个新的数组，将其绑定到一个标识符中，访问每一个元素的操作如下：
+```
+>> let myArray = ["Thorsten", "Ball", 28 , fn(x){x * x}];
+>> myArray[0]
+Thorsten
+>> myArray[2]
+28
+>> myArray[3](2);
+4
+```
+正如你看的那样，Monkey中的数据不在乎元素的类型，每一个类型都可以作为一个数组的内容。在这个例子中`myArray`包含了两个字符串、一个整型和一个函数。
+
+可以通过索引访问每一个元素，就像接下来三行代码，这是通过新的操作符，叫做索引操作符:`array[index]`。
+
+在本小节中，我们将`len`内置函数同样支持数组操作，也增加一些内置函数可以操作数组。
+```
+>> let myArray = ["one", "two", "three"];
+>> len(myArray)
+3
+>> first(myArray)
+one
+>> rest(myArray)
+[two, three]
+>> push(myArray, "four")
+[one, two, three, four]
+```
+为我们Monkey语言实现的基础部分是go语言的`[]object.Object`，这也就意味着我们不需要自己实现数据结构，只需要重用go的切片。
+
+听起来不错？是的，我们首先要做的就是让我们的词法分析器识别新的token。
+
+**词法分析器支持数据**
+
+
 <h2 id="ch05-hashes">5.5 哈希表</h2>
 <h2 id="ch05-the-grand-finale">5.6 完结</h2>
 
