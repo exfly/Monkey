@@ -2736,7 +2736,74 @@ one
 
 **词法分析器支持数据**
 
+为了正确解析数组字符串和和索引操作，我们词法解析器需要能够确定更多的token。我们需要构造的解析器是`[,]`和`,`，词法解析器先前完成的部分已经完成`,`，所以我们只需要支持`[`和`]`。
 
+首先要做的是在`token`包中定义新的`token`类型。
+```go
+// token/token.go
+const (
+// [...]
+    LBRACKET = "["
+    RBRACKET = "]"
+// [...]
+)
+```
+第二步需要做的是拓展我们的测试部分，以便适应词法解析器。 这一点非常简单，之前已经重复很多次了。
+```go
+func TestNextToken2(t *testing.T) {
+	input := `let five=5;
+let ten =10;
+let add = fn(x, y){
+  x+y;
+};
+let result = add(five, ten);
+!-/*5;
+5<10>5;
+if(5<10){
+	return true;
+}else{
+	return false;
+}
+10 == 10;
+10 != 9;
+"foobar"
+"foo bar"
+[1,2];
+`
+	tests := []struct {
+		expectedType    token.TokenType
+		expectedLiteral string
+	}{
+//[...]
+		{token.LBRACKET, "["},
+		{token.INT, "1"},
+		{token.COMMA, ","},
+		{token.INT, "2"},
+		{token.RBRACKET, "]"},
+		{token.EOF, ""},
+    }
+// [...]
+}
+```
+`input`部分拓展为包含了新的`token`(在本例中是[1,2])，新的测试用语句已经被添加，以确保词法解析器中的`NextToken`方法能够正确返回`token.LBRACKET`和`token.RBRACKET`。
+
+使测试通过也非常简单，只要增加在`NextToken`方法中增加四行代码：
+```go
+//lext/lext.go
+func (l *Lexer) NextToken() token.Token {
+// [...]
+    case '[':
+        tok = newToken(token.LBRACKET, l.ch)
+    case ']':
+        tok = newToken(token.RBRACKET, l.ch)
+// [...]
+}
+```
+是的，所有的测试已经通过
+```
+$ go test ./lexer
+ok monkey/lexer 0.006s
+```
 <h2 id="ch05-hashes">5.5 哈希表</h2>
 <h2 id="ch05-the-grand-finale">5.6 完结</h2>
 
