@@ -2804,6 +2804,113 @@ func (l *Lexer) NextToken() token.Token {
 $ go test ./lexer
 ok monkey/lexer 0.006s
 ```
+所以在我们的语法解析中，我们可以使用`token.LBRACKET`和`tokne.RBRACKET`来解析数组。
+
+**解析数组**
+在我们前面所说的，Monkey中的数组就是有逗号隔开的列表，并且它们被包含在一个方括号中。
+```
+[1, 2, 3 + 3, fn(x), add(2, 2)]
+```
+数组中的每一个元素可以是任何类型的表达式，整型、函数、中缀或者前缀表达式。
+
+如果听起来非常复杂，不用担心。在函数调用参数解析那一部分我们已经知道如何解析由逗号隔开的列表表达式。而且我们也知道如何去解析一些被匹配的token包含的表达式，换句话说也就是我们已经知道如何去处理它们了。
+
+首先要做的事在抽象语法树中定义节点用来表达数组，既然我们已经知道其中的最基础的内容，代码就很容易解释了：
+```go
+// ast/ast.go
+type ArrayLiteral struct {
+    Token token.Token // the '[' token
+    Elements []Expression
+}
+func (al *ArrayLiteral) expressionNode() {}
+func (al *ArrayLiteral) TokenLiteral() string { return al.Token.Literal }
+func (al *ArrayLiteral) String() string {
+    var out bytes.Buffer
+    elements := []string{}
+    for _, el := range al.Elements {
+        elements := append(elements, el.String())
+    }
+    out.WriteString("[")
+    out.WriteString(string.Join(elements, ", "))
+    out.WriteString("]")
+    return out.String()
+}
+```
+接下来的测试函数用来确保能够正确解析数组，并且返回`*ast.ArrayLiteral`(我也增加了测试函数用来检测空的数组来确保我们不会陷入讨厌的边缘用例)
+```go
+// parser/parser_test.go
+func TestParsingArrayLiteral(t *testing.T) {
+	input := `[1, 2*2, 3+3]`
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+	stmt, ok := program.Statements[0].(*ast.ExpressionStatement)
+	array, ok := stmt.Expression.(*ast.ArrayLiteral)
+	if !ok {
+		t.Fatalf("exp not ast.ArrayLiteral. got=%T", stmt.Expression)
+	}
+	if len(array.Elements) != 3 {
+		t.Fatalf("len(array.Elements) not 3. got=%d", len(array.Elements))
+	}
+	testIntegerLiteral(t, array.Elements[0], 1)
+	testInfixExpression(t, array.Elements[1], 2, "*", 2)
+	testInfixExpression(t, array.Elements[2], 3, "+", 3)
+}
+```
+为了确保解析正确工作，测试输入部分包含了两种不同的中缀表达式，尽管整型和布尔型足够了。除此之外，测试部分也是非常枯燥，但是确保解析器能够返回`*ast.ArrayLiteral`对象并且包含正确数量的元素。
+
+为了让测试通过，我们需要注册新的前缀表达式，因为左方括号是一个前缀表达式。
+```go
+//parser/parser.go
+func New(l *lexer.Lexer) *Parser{
+// [...]
+    p.registerPrefix(token.LBRACKET, p.parseArrayLiteral)
+// [...]
+}
+func (p *Parser) parserArrayLiteral() ast.Expression{
+    array := &ast.ArrayLiteral{Token: p.curToken}
+    array.Elements = p.parseExpressionList(token.RBRACKET)
+    return array
+}
+```
+先前我们已经添加了`prefixParserFns`，所以这里并没有什么值得兴奋的。但是这里值得注意的是我们增加了新的方法`parseExpressionList`。该方法修改了先前的`parserCallArgument`方法并且变得更加通用，先前是用来解析`parserCallExpresion`中的用逗号隔开的参数列表。
+
+```go 
+//parser/parser.go
+func (p *Parser) parseExpressionList(end token.TokenType) []ast.Expression {
+	list := make([]ast.Expression, 0)
+	if p.peekTokenIs(end) {
+		p.nextToken()
+		return list
+	}
+	p.nextToken()
+	list = append(list, p.parseExpression(LOWEST))
+	for p.peekTokenIs(token.COMMA) {
+		p.nextToken()
+		p.nextToken()
+		list = append(list, p.parseExpression(LOWEST))
+	}
+	if !p.expectPeek(end) {
+		return nil
+	}
+	return list
+}
+```
+再一次，我们在`parseCallArugment`方法中见过这个方法，唯一的变化是这个版本接受一个终结的参数用来告诉方法哪一个是列表的结束。这个新版本的`paseCallExpression`方法现在看上去是这样的：
+```go
+//parser/parser.go
+func (p *Parser) parserCallExpresison(function ast.Expression)ast.Expression{
+    exp := &ast.CallExpression{Token:p.curToken, Function:function}
+    exp.Argument = p.parserExpresson(token.RPAREN)
+    return exp
+}
+```
+唯一改变的地方时我们调用`paserExpressionList`使用`token.RPAREN`（这个用来确定参数的结束)。我们通过修改几行代码，能够重新使用这个方法。棒极了，最重要的是我们的测试通过了：
+```
+$ go test  ./parser
+ok monkey/parser 0.007s
+```
 <h2 id="ch05-hashes">5.5 哈希表</h2>
 <h2 id="ch05-the-grand-finale">5.6 完结</h2>
 
