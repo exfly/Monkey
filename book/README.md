@@ -2911,6 +2911,83 @@ func (p *Parser) parserCallExpresison(function ast.Expression)ast.Expression{
 $ go test  ./parser
 ok monkey/parser 0.007s
 ```
+
+**解析索引表达式**
+
+为了完整的支持数组，我们不仅仅要求解析出数组，还要解析出索引表达式。或许索引操作符听上去没有什么映象，但是我打赌你肯定知道这是什么回事。索引操作符如下所示：
+```
+myArray[0];
+myArray[1];
+myArray[2];
+```
+这些事最简单的形式，但是还有其他很多例子，如下所示：
+```
+[1, 2, 3, 4][2];
+let myArray = [1, 2, 3, 4];
+myArray[2];
+myArray[2+1];
+returnsArray()[1];
+```
+是的，这些都是正确的，最基本的表达式是`<expression>[<expression>]`。这个看上去足够简单，我们可定定义新的抽象语法树的节点：`ast.IndexExpression`，结构如下：
+```go
+//ast/ast.go
+type IndexExpression struct {
+	Token token.Token
+	Left  Expression
+	Index Expression
+}
+
+func (ie *IndexExpression) expressionNode()      {}
+func (ie *IndexExpression) TokenLiteral() string { return ie.Token.Literal }
+func (ie *IndexExpression) String() string {
+	var out bytes.Buffer
+	out.WriteString("(")
+	out.WriteString(ie.Left.String())
+	out.WriteString("[")
+	out.WriteString(ie.Index.String())
+	out.WriteString("])")
+	return out.String()
+}
+```
+值得注意的是`left`和`index`字段都是表达式。 `left`使我们可以访问的对象，它可以是任何类型：标识符、字面数组或者函数调用。对于`index`也是同样如此，任何表达式都可以。语法上来讲并没有任何改变，在语义上都会生成一个整数。
+
+事实上，`left`和`index`都是表达式更加有助于处理，因为我们可以用`parseExpression`方法来处理他们。但是第一件事就是我们的测试用例能够知道并且返回一个`*ast.IndexExpression`:
+```go
+//parser/parser_test.go
+func TestParsingIndexExpression(t *testing.T) {
+	input := "myArray[1+1]"
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+	stmt, _ := program.Statements[0].(*ast.ExpressionStatement)
+	indexExp, ok := stmt.Expression.(*ast.IndexExpression)
+	if !ok {
+		t.Fatalf("exp not *ast.IndexExpression. got=%T", stmt.Expression)
+	}
+	if !testIdentifier(t, indexExp.Left, "myArray") {
+		return
+	}
+	if !testInfixExpression(t, indexExp.Index, 1, "+", 1) {
+		return
+	}
+}
+```
+现在测试只能确保解析器只能返回正确的抽象语法树当只有单一的表达式语句包单个索引表达式。但是同样重要的是解析器能够正确处理索引表达式的优先级。目前为止，索引操作符拥有最高的操作符，可以拓展我们的`TestOperatorPrecedenceParsing`测试函数。
+```go
+//parser/parser_test.go
+func TestOperatorPrecedenceParsing(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+//[...]
+		{"a*[1,2,3,4][b*c]*d", "((a * ([1, 2, 3, 4][(b * c)])) * d)"},
+		{"add(a*b[2], b[1], 2 * [1,2][1])", "add((a * (b[2])), (b[1]), (2 * ([1, 2][1])))"},
+	}
+//[...]
+}
+```
 <h2 id="ch05-hashes">5.5 哈希表</h2>
 <h2 id="ch05-the-grand-finale">5.6 完结</h2>
 
