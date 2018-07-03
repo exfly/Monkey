@@ -2988,6 +2988,66 @@ func TestOperatorPrecedenceParsing(t *testing.T) {
 //[...]
 }
 ```
+在`String()`方法中增加的`(`和`)`输出`*ast.IndexExpression`有助于我们编写测试用例，因为它能使得索引操作符号清晰的表达。在测试用例中我们期望在中缀表达式中索引操作符的优先级比调用表达式甚至`*`操作符更高。
+
+测试是失败的因为我们的解析器不知道任何关于索引表达式的内容：
+```
+$ go test ./parser
+--- FAIL: TestOperatorPrecedenceParsing (0.00s)
+---
+FAIL
+FAIL monkey/parser 0.007s
+```
+尽管测试中输的的缺失`prefixParseFn`方法就是我们想要的，但是索引表达式并不需要在一个操作符两边有各有一个操作数。为了解析很方便地解析它们，我们这样做大有裨益，就跟先前函数调用表达式解析一样。具体来讲就是将`[`在`myArray[0]`作为一个中缀表达式，`myArray`作为左边操作数而`0`作为右边操作数。这样做的话，我们解析的实现就非常棒了:
+```go
+//parser/parser.go
+func New(l *lexer.Lexer) *Parser{
+// [...]
+    p.registerInfix(token.LBRACKET, p.parserIndexExpression)
+// [...]
+}
+func (p *Parser) parserIndexExpression(left ast.Expression)ast.Expression{
+    exp := &ast.IndexExpression{Token: p.curToken, Left:left}
+    p.nextToken()
+    p.Index = p.parserExpression(LOWEST)
+    if !p.expectPeek(Token.RBRACKET){
+        return nil
+    }
+    return exp
+}
+```
+很棒，但是并没有修复我们没有通过的测试
+```
+$ go test ./parser
+--- FAIL: TestOperatorPrecedenceParsing (0.00s)
+---
+FAIL
+FAIL monkey/parser 0.008s
+```
+原因是在Pratt解析中的优先级问题，我们还没有定义索引操作符的优先级。
+```go
+// parser/parser.go
+const (
+    _ int = iota
+// [...]
+    INDEX
+)
+var precedneces = map[token.TokenType]int{
+// [...]
+    token.LBRACKET: INDEX
+}
+```
+最重要的一点是将`INDEX`放在最后一行，借助`iota`, 它将`INDEX`最高的优先级。新增加的词条给`token.LBRACKET`最高级别的优先级。当然，一切都通过。
+```
+$ go test ./parser
+ok monkey/parser 0.007s
+```
+词法分析完成、语法分析完成，接下来是执行器。
+
+**执行数组**
+
+
+
 <h2 id="ch05-hashes">5.5 哈希表</h2>
 <h2 id="ch05-the-grand-finale">5.6 完结</h2>
 
