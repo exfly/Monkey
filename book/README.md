@@ -3046,8 +3046,135 @@ ok monkey/parser 0.007s
 
 **执行数组**
 
+执行数组并不难，将数组映射到Go语言的切片类型非常简单，我们也就不需要自己实现新的数据结构。我们仅仅需要定义新的`object.Array`类型，它将是数组类型生成的结果。定义`object.Array`非常简单，因为在Monkey语言中数组非常简单：它们仅仅就是一系列对象。
+```go
+// object/object.go
+const (
+// [...]
+    ARRAY_OBJ = "ARRAY"
+)
+type Array struct {
+    Elements []object
+}
+func (ao *Array) Type() ObjectType { return ARRAY_OBJ }
+func (ao *Array) Inspect() string {
+    var out bytes.Buffer
+    elements := []string{}
+    for _, e := range ao.Elements {
+        elements = append(elements, e.Inspect())
+    }
+    out.WriteString("[")
+    out.WriteString(string.Join(elements, ", "))
+    out.WriteString("]")
+    return out.String()
+}
+```
+我认为你会同意我说的最复杂的部分就是`Inspect`方法的定义，而且那是相当容易理解的。
 
+下面就是数组的执行测试：
+```go
+//evalutor/evalutor_test.go
+func TestArrayLiterals(t *testing.T) {
+	input := `[1, 2*2, 3+3]`
+	evaluated := testEval(input)
+	result, ok := evaluated.(*object.Array)
+	if !ok {
+		t.Fatalf("object is not Array, got=%T(%v)",
+			evaluated, evaluated)
+	}
+	if len(result.Elements) != 3 {
+		t.Fatalf("array has wrong num of elements. got=%d",
+			len(result.Elements))
+	}
+	testDecimalObject(t, result.Elements[0], 1)
+	testDecimalObject(t, result.Elements[1], 4)
+	testDecimalObject(t, result.Elements[2], 6)
+}
+```
+我们可以重用已经存在的代码让测试通过，就像我们在解析器中所做的。我们可以重用先前函数调用部分代码，也就是增加分支用来执行`*ast.ArrayLiteral`来生成数组对象:
+```go
+//evalutor/evalutor.go
+func Eval(node ast.Node, env *object.Environment) object.Object {
+// [...]
+    case *ast.ArrayLiteral:
+        elements := evalExpression(node.Elements, env)
+        if len(elements) == 1 && isError(elements[0]) {
+            return elements[0]
+        }
+        return &object.Array{Elements: elements}
+}
+```
+测试通过，并且我们可以在REPL中使用字面数组并且生成数组：
+```
+$ go run main.go
+Hello mrnugget! This is the monkey programming language!
+Feel free to type in commands
+>> [1, 2, 3, 4]
+[1, 2, 3, 4]
+>> let double = fn(x) { x  * 2};
+>> [1, double(2), 3 * 3, 4 - 3]
+[1, 2, 9, 1]
+```
+是不是很神奇，但是我们现在还不能通过索引表达式访问单个元素。
 
+**执行索引表达式**
+好消息是解析索引表达式比执行索引表达式难多了，我们已经完成解析部分。唯一问题是可能出现移位错误在访问数组中的元素。因此我们在测试集中增加一些测试：
+```go
+// evalutor/evalutor_test.go
+func TestArrayIndexExpression(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected interface{}
+	}{
+		{
+			"[1,2,3][0]",
+			1,
+		},
+		{
+			"[1,2,3][1]",
+			2,
+		},
+		{
+			"[1,2,3][2]",
+			3,
+		},
+		{
+			"let i =0; [1][i]",
+			1,
+		},
+		{
+			"let myArray=[1,2,3];myArray[2];",
+			3,
+		},
+		{
+			"let myArray=[1,2,3];myArray[0]+myArray[1]+myArray[2]",
+			6,
+		},
+		{
+			"let myArray=[1,2,3];let i = myArray[0]; myArray[i]",
+			2,
+		},
+		{
+			"[1,2,3][3]",
+			nil,
+		},
+		{
+			"[1,2,3][-1]",
+			nil,
+		},
+	}
+	for _, tt := range tests {
+		evaluated := testEval(tt.input)
+		integer, ok := tt.expected.(int)
+		if ok {
+			testDecimalObject(t, evaluated, int64(integer))
+		} else {
+			testNullObject(t, evaluated)
+		}
+	}
+}
+```
+我们承认
 <h2 id="ch05-hashes">5.5 哈希表</h2>
 <h2 id="ch05-the-grand-finale">5.6 完结</h2>
 
