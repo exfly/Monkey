@@ -3174,7 +3174,88 @@ func TestArrayIndexExpression(t *testing.T) {
 	}
 }
 ```
-我们承认
+我们承认这些测试有点多，好多测试我们在其他地方已经测试完毕。但是这些测试非常容易编写，也非常可读。
+
+特别注意一下这些测试所期望的行为， 它包含了我们先前没有考虑过得内容，当索引的的大小超出数组的边界，我们将会返回NULL。其他一些语言会生成一个错误或者返回一个null，我们这里选择null。
+
+正如我们期望的，测试失败了，失败信息如下：
+```
+$ go test ./evalutor
+--- FAIL: TestArrayIndexExpression(0.00s)
+panic: runtime error: invalid memory address or nil pointer deference
+FAIL monkey/evalutor 0.011s
+```
+那么那么我们该如何修复和执行索引表达式呢？正如我们先前看到，索引操作符的左边操作数可以是任何表达式，而索引表达式也也可以是任何表达式。这就意味着我们在执行中缀表达式之前要先执行两边表达的表达式。否则我们直接访问标识符或者函数的标识符将无法工作。
+
+在这我们增加一个`*ast.IndexExpression`分支，来调用`Eval`函数。
+```go
+// evalutor/evalutor/go
+func Eval(node ast.Node, env *object.Environment) object.Object {
+// [...]
+    case *ast.IndexExpression:
+        left := Eval(node.Left, env)
+        if isEror(left){
+            return left
+        }
+        index := Eval(node.Index, env)
+        is isError(index){
+            return index
+        }
+        return evalIndexExpression(left, index)
+// [...]
+}
+```
+接下来是`evalIndexExpression`函数
+```go
+// evalutor/evalutor.go
+func evalIndexExpression(left, index object.Object) object.Object{
+    switch {
+    case left.Type() == object.Array_OBJ && index.Type() == object.INTEGER_OBJ:
+        return evalArrayIndexExpression(left, index)
+    default:
+        return newError("index operator not support: %s", left.Type())
+    }
+}
+```
+使用`if`条件语句足够了，但是在下一章节我们将会增加其他`case`分支。除了错误处理，最重要是`evalArrayIndexExpression`函数中。
+```go
+func evalArrayIndexExpression(array, index object.Object) object.Object {
+    arrayObject := array.(*object.Array)
+    idx := index.(*object.Integer).Value
+    max := int64(len(arrayObject.Element) - 1)
+    if id<0 || idx > max {
+        return NULL
+    }
+    return arrayObject.Element[idx]
+}
+```
+在这我们从数组中按照给定的索引获取相应的元素， 除此之外一些类型判断和类型转换也非常直接，它检查给定的索引值是否在给定范围内，如果超出范围返回NULL，正如我们在测试中给出医德一样， 现在测试通过了。
+```
+$ go test ./evalutor
+ok monkey/evalutor 0.007s
+```
+现在放轻松，深呼吸一下看看接下来会发生什么：
+```
+$ go run main.go
+Hello mrnugget! This is the monkey programming language!
+Feel free to type in commands
+>> let a = [1, 2 * 2, 10 - 5, 8 / 2]
+>> a[0]
+1
+>> a[1]
+4
+>> a[5 - 3]
+5
+>> a[99]
+null
+```
+从数组中获取元素成功了，非常棒。我想字再一次说实现这些功能非常神奇。
+
+
+**为数组增加内置函数**
+
+
+
 <h2 id="ch05-hashes">5.5 哈希表</h2>
 <h2 id="ch05-the-grand-finale">5.6 完结</h2>
 
