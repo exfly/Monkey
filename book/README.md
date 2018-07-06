@@ -3254,6 +3254,35 @@ null
 
 **为数组增加内置函数**
 
+现在我们可以通过数组字面值构建数组，也可以通过中缀表达式访问数组中的元素。以上两个功能可以使得数组非常有用，但是为了让数组更加有用，我们需要增加一些内置函数来使他们变得更加方便，这一小节我们就做这事。
+
+在这一小节中我们将不会增加任何测试代码， 应为这些特定的测试将会占据空间并且不会增加任何新的东西。我们的为内置函数测试的框架已经包含在`TestBuiltFunctions`，仅仅需要在已有的框架中增加，你会发现他们很好地适应。
+
+我们的目标是增加新的内置函数，但是我么首先要做的事不知增加他们，而是修改已有的代码。我们需要`len`函数支持数组操作，目前它只支持字符串类型。
+```go
+//evaluator/builtins.go
+var builtins = map[string]*object.Builtin{
+	"len": {
+		Fn: func(args ...object.Object) object.Object {
+			if len(args) != 1 {
+				return newError("wrong number of arguments. got=%d, want=1",
+					len(args))
+			}
+			switch arg := args[0].(type) {
+			case *object.String:
+				return &object.Integer{Value: int64(len(arg.Value))}
+			case *object.Array:
+				return &object.Integer{Value: int64(len(arg.Elements))}
+			default:
+				return newError("argument to `len` not supported, got=%s",
+					args[0].Type())
+			}
+		},
+    },
+//[...]
+}
+```
+唯一的变化就是增加的`*object.Array`分支，接下来我们需要增加其他新的函数。
 
 
 <h2 id="ch05-hashes">5.5 哈希表</h2>
