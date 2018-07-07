@@ -3284,7 +3284,182 @@ var builtins = map[string]*object.Builtin{
 ```
 唯一的变化就是增加的`*object.Array`分支，接下来我们需要增加其他新的函数。
 
+首先要增加的内置函数是`first`,它返回数组的第一个元素。同样你也可以调用`myArray[0]`达到同样的效果，但是`frist`相当简洁，接下来就是其实现：
+```go
+//evalutor/builtins.go
+var builtins = map[string]*object.Builtin{
+//[...]
+    "first":&object.Builtin{
+        Fn: func(args ...object.Object) object.Object{
+            if len(args) != 1{
+                return newError("wrong number of arguments. got=%d, want=1", len(args))
+            }
+            if args[0].Type() != object.ARRAY_OBJ {
+                return newERror("argument to 'frist' must be ARRAY, got %s", args[0].Type())
+            }
+            arr := args[0].(*object.Array)
+            if len(arr.Elements) > 0 {
+                return arr.Elements[0]
+            }
+            return NULL
+        },
+    },
+}
+```
+棒极了，那么接下来是什么呢？是的，我们接下来将要增加的的是`last`。
 
+`last`函数的目的是返回数组的最后一个元素，使用索引操作符是`myArray[len(myArray) - 1]`，正如其表达的一样，实现`last`函数并不困难，就跟`first`类似。
+```go
+//evalutro/builtin.go
+var builtins = map[string]*object.Builtin{
+"last": {
+		Fn: func(args ...object.Object) object.Object {
+			if len(args) != 1 {
+				return newError("wrong number of arguments. got=%d, want=1",
+					len(args))
+			}
+			if args[0].Type() != object.ARRAY_OBJ {
+				return newError("argument to `last` must be ARRAY, got %s",
+					args[0].Type())
+			}
+			arr := args[0].(*object.Array)
+			length := len(arr.Elements)
+			if length > 0 {
+				return arr.Elements[length-1]
+			}
+			return NULL
+		},
+    },
+}
+```
+接下来我们将要增加类似`Scheme`语言中的`cdr`函数，在其他语言中同样也叫做`tail`函数，在这里我们将叫做`rest`。该函数返回新的数组包含其传入的参数的数组，除了第一个元素。使用起来如下所示：
+```
+>> let a = [1, 2, 3, 4];
+>> rest(a)
+[2, 3, 4]
+>> rest(rest(a))
+[3, 4]
+>> rest(rest(rest(a)))
+[4]
+>> rest(rest(rest(rest(a))))
+[]
+>> rest(rest(rest(rest(rest(a)))))
+null
+```
+实现非常简单，但是要记住我们返回的是新分配的数组，我们并没有修改传入的数组。
+```go
+//evalutor/builitins.go
+var builtins = map[string]*object.Builtin{
+// [...]
+    "rest": {
+		Fn: func(args ...object.Object) object.Object {
+			if len(args) != 1 {
+				return newError("wrong number of arguments. got=%d, want=1",
+					len(args))
+			}
+			if args[0].Type() != object.ARRAY_OBJ {
+				return newError("argument to `rest` must be ARRAY, got=%s",
+					args[0].Type())
+			}
+			arr := args[0].(*object.Array)
+			length := len(arr.Elements)
+			if length > 0 {
+				newElements := make([]object.Object, length-1, length-1)
+				copy(newElements, arr.Elements[1:length])
+				return &object.Array{Elements: newElements}
+			}
+			return NULL
+
+		},
+	},
+}
+```
+接下来我们为数组增加的内置函数是`push`, 它在一个数组的后面增加一个新的元素，这里同样我们并不修改传入的数组，而是重新分配同样元素的数组，并且增加新增加的元素。在Monkey中，数组是不可修改的，下面是其实现操作：
+```
+>> let a = [1, 2, 3, 4]
+>> let b = push(a, 5)
+>> a
+[1, 2, 3, 4]
+>> b
+[1, 2, 3, 4, 5]
+```
+接下来就是实现：
+```go
+//evalutor/builtins.go
+var builtins = map[string]*object.Builtin{
+//[...]
+"push": {
+		Fn: func(args ...object.Object) object.Object {
+			if len(args) != 2 {
+				return newError("wrong number of arguments. got=%d, want=1",
+					len(args))
+			}
+			if args[0].Type() != object.ARRAY_OBJ {
+				return newError("argument to `push` must be ARRAY, got=%s",
+					args[0].Type())
+			}
+			arr := args[0].(*object.Array)
+			length := len(arr.Elements)
+			newElements := make([]object.Object, length+1, length+1)
+			copy(newElements, arr.Elements)
+			newElements[length] = args[1]
+			return &object.Array{Elements: newElements}
+		},
+    },
+}
+```
+
+**测试驱动数组**
+
+现在我们有数组，索引表达式和一些和数组一同工作的内置函数。是适合做一些工作，看看我我么你现在能做什么。
+
+通过`first`,`rest`和`push`函数我们可以构建`mao`函数
+```
+let map =fn(arr, f){
+    let iter = fn(arr, accumlated){
+        if (len(arr) == 0) {
+            return accumleated
+        }else{
+            iter(rest(arr), push(accumate, f(first(arr))));
+        }
+    }
+    iter(arr, []);
+}
+```
+通过`map`我们可以这样操作
+```
+>> let a= [1, 2, 3, 4];
+>> let double = fn(x){ x + 2 };
+>> map(a, double);
+[2, 4, 6, 8]
+```
+是不是很神奇，基于内置函数我们同样可以定义`reduce`函数
+```
+let d=reduce = fn(arr, initial, f){
+    let iter = fn(arra, result){
+        if (len(arr) == 0){
+            result
+        }else{
+            iter(rest(arr), f(result, first(arr)));
+        }
+    };
+    iter(arr, initial)
+}
+```
+基于`reduce`， 同样我们也可以定义`sum`函数
+```
+let sum = fn(arr){
+    reduce(arr, 0, fn(initial, el){ initial + el });
+}
+```
+同样也是工作了：
+```
+>> sum([1, 2, 3, 4, 5])
+15
+```
+现在看看我们的解释器，可以有`map`函数，`reduce`同样如此，我们完成了巨大的工作。
+
+这些不是全部，我们还有许多可以做，我希望你能够探索更多可能的数据类型和内置函数。在这之前，你可以在你朋友家人之前骄傲一下。
 <h2 id="ch05-hashes">5.5 哈希表</h2>
 <h2 id="ch05-the-grand-finale">5.6 完结</h2>
 
