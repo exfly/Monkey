@@ -3461,6 +3461,113 @@ let sum = fn(arr){
 
 这些不是全部，我们还有许多可以做，我希望你能够探索更多可能的数据类型和内置函数。在这之前，你可以在你朋友家人之前骄傲一下。
 <h2 id="ch05-hashes">5.5 哈希表</h2>
+接下来我们要增加的数据类型是哈希表，在Monkey语言中的哈希表在其他语言中也称之为映射表或者字典，它将键映射到值。
+
+为了在Monkey语言中使用哈希表，规定哈希字面值为：一个冒号隔开的键值对列表，它们被包含在一对花括号中，每一个键值对都用逗号与其他键值对分开，下面就是哈希表的样子
+```
+>> let myHash = {"name":"Jimmy","age":72, "band":"Led Zeppelin"};
+>> myHash["name"]
+Jimmy
+>> myHash["age"]
+72
+>> myHash["band"]
+Led Zeppelin
+```
+在这个例子中`myHash`包含了三个键值对，它们的值都是都是字符串，正如你看到的那样，我们在哈希表中同样适用中缀表达式，就跟数组中使用的一样。在这个例子中的索引使用字符串，这个在数组中不起作用，并且它也不是哈希表键的唯一数据类型。
+
+```
+>> let myHash = {true: "yes, a boolean", 99:"correct, an integer"};
+>> myHash[true]
+yes, a boolean
+>> myHash[99]
+correct, an in
+```
+那同样有效，事实上，除了字符串、整型和布尔型，我们可以使用任何表达式作为索引操作符的索引。
+```
+>> myHash[5>1]
+yes, a boolean
+>> myHas[100 - 1]
+correct, an integer
+```
+只要这些表达式的执行结果是要是字符串、整型或者布尔型中的任何一个都可以作为键，在这`5>1`执行结果为`true`，`100-1`执行结果为`99`，两者都是`myHash`中有效的值。
+
+不奇怪的是我们在Monkey的哈希表中，我们使用Go语言中的`map`作为数据类型，但是我们想要字符串、整型和布尔类型这些不变类型作为键，我们需要在此基础上做些工作。我们在此基础上拓展我们对象系统，但是首先要做的事将哈希字面值转换为`token`
+
+**词法解析哈希**
+
+我们该如何将哈希字面值转换为`token`呢？哪些`token`需要我们确认出并且作为我们的词法解析器的输出以便给接下来的语法解析器，下面是哈希字面值：
+```javascript
+{"name":"Jimmy","age":72, "band":"Led Zeppelin"}
+```
+除了字符串之外，有四个字符集在这里显得特别重要：`{`, `}`,`,`,和`:`。我们已经知道如何解析前面三种，我么的词法解析器将他们解析为`token.LBRACE`，`token.RBRACE`和`token.COMMA`，也就是说我们所做的就是将`:`转换成相应的`token`。
+
+首先要做的是在`token`包中增加必须的类型
+```go
+//token/token.go
+const (
+//[...]
+    COLON = ":"
+//[...]
+)
+```
+接下来就是为`Lexer`的`NextToken`方法增加测试使得`token.COLON`如期望所示。
+```go
+//lexer/lexer_test.go
+func TestNextToken2(t *testing.T) {
+	input := `let five=5;
+let ten =10;
+let add = fn(x, y){
+  x+y;
+};
+let result = add(five, ten);
+!-/*5;
+5<10>5;
+
+if(5<10){
+	return true;
+}else{
+	return false;
+}
+10 == 10;
+10 != 9;
+"foobar"
+"foo bar"
+[1,2];
+{"foo":"bar"}
+`
+	tests := []struct {
+		expectedType    token.TokenType
+		expectedLiteral string
+	}{
+//[...]
+		{token.LBRACE, "{"},
+		{token.STRING, "foo"},
+		{token.COLON, ":"},
+		{token.STRING, "bar"},
+		{token.RBRACE, "}"},
+		{token.EOF, ""},
+	}
+// [...]
+}
+```
+我们可以仅仅通过增加`:`来进行测试，但是使用的哈希表来进提供更多的上下文来进行测试。
+```go
+//lexer/lexer.go
+func (l *Lexer) NextToken() token.Token{
+//[...]
+    case ':':
+        tok = newTokne(token.COLON, l.ch)
+//[...]
+}
+```
+只需要两行代码，词法解析器就可以将`token.COLON`解析出来
+```
+$ got test ./lexer
+ok monkey/lexer 0.006s
+```
+我们现在反悔了`token.LBRACE`, `token.RBRACE`和`token.COMMA`以及新的`tokne.COLON`，这是我们用来解析哈希表。
+
+
 <h2 id="ch05-the-grand-finale">5.6 完结</h2>
 
 <h1 id="ch06-resource">6 资源</h1>
