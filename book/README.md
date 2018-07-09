@@ -3567,6 +3567,47 @@ ok monkey/lexer 0.006s
 ```
 我们现在反悔了`token.LBRACE`, `token.RBRACE`和`token.COMMA`以及新的`tokne.COLON`，这是我们用来解析哈希表。
 
+**解析哈希表**
+
+在我们开始编写解析器甚至开写测试，让我们先看看哈希表额基础语法结构
+```
+{<expression>:<expression>, <expression>:<expression>}
+```
+这是由逗号隔开的键值对，每一个键值对包含两个表达式，一个生成哈希表的键，另一个生成值。键和值用冒号隔开，所有的键值对有一对花括号包含起来。
+
+转换到抽象语法树的节点，我们该如何记录每一个键值对呢？我们该如何去做？是的，用`map`字典来表示，但是字典中的键和值如何表示呢？
+
+我们先前说过，只有字符串、整型和布尔型才能作为哈希表的键，但是我们不能再解析器中强制这样。我们需要在执行阶段验证哈希表的键的类型，并且生成相应的错误。
+
+由于很多不同的表达式都能生成字符串，整型或者布尔型，不仅仅是其中的字面类型，强制数据类型在解析阶段会阻止我们写出下面的代码：
+```
+let key = "name";
+let ahs = {key: "monkey"};
+```
+在这里`key`的执行生成`"name"`，这是合法的哈希键值，尽管它是一个标识符。为了允许这么做，我们需要允许在哈希字面中任何表达式作为键，任何表达式作为值。至少在解析阶段，我们的`ast.HashLiteral`的定义如下：
+```go
+//ast/ast.go
+type HashLiteral struct {
+    Token token.Token
+    Pair map[Expression]Expression
+}
+func (hl *HashLiteral) expressionNode() {}
+func (hl *HashLiteral) TokenLiteral() string {
+    return h1.Token.Literal
+}
+func (hl *HashLiteral) String() string {
+    var out bytes.Buffer
+    pairs := []string{}
+    for key, value := range hl.Pairs{
+        pairs = append(pair, key.String()+":"+value.String()_
+    }
+    out.WriteString("{")
+    out.WriteString(strings.Join(pairs, ", "))
+    out.WriteString("}")
+    return out.String()
+}
+```
+
 
 <h2 id="ch05-the-grand-finale">5.6 完结</h2>
 
