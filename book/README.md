@@ -3607,6 +3607,151 @@ func (hl *HashLiteral) String() string {
     return out.String()
 }
 ```
+现在我们已经清楚了哈希表的结构，并且已经定义了`ast.HashLiteral`结构，现在我们可以在解析器中编写测试。
+```go
+//parser/parser_test.go
+func TestParsingHashLiteral(t *testing.T) {
+	input := `{"one":1, "two":2, "three":3}`
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+	stmt := program.Statements[0].(*ast.ExpressionStatement)
+	hash, ok := stmt.Expression.(*ast.HashLiteral)
+	if !ok {
+		t.Fatalf("exp is not ast.HashLiteral. got=%T", stmt.Expression)
+	}
+	if len(hash.Pairs) != 3 {
+		t.Errorf("hash.Pairs has wrong legnth. got=%d", len(hash.Pairs))
+	}
+	expected := map[string]int64{
+		"one":   1,
+		"two":   2,
+		"three": 3,
+	}
+	for key, value := range hash.Pairs {
+		literal, ok := key.(*ast.StringLiteral)
+		if !ok {
+			t.Errorf("key is not ast.StringLiteral. got=%T", key)
+		}
+		expectedValue := expected[literal.String()]
+		testIntegerLiteral(t, value, expectedValue)
+	}
+}
+```
+当然，我们可以确保解析空的哈希表示正确，因为边界条件在代码中已经考虑到了。
+```go
+//parser/parser_test.go
+func TestParsingEmptyHashLiteral(t *testing.T) {
+	input := "{}"
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+	stmt := program.Statements[0].(*ast.ExpressionStatement)
+	hash, ok := stmt.Expression.(*ast.HashLiteral)
+	if !ok {
+		t.Fatalf("exp isn not ast.HashLiteral. got=%T",
+			stmt.Expression)
+	}
+	if len(hash.Pairs) != 0 {
+		t.Errorf("hash.Pairs has wrong length. got=%d", len(hash.Pairs))
+	}
+}
+```
+我同样也增加一些新的测试，这些和`TestHashLiteralStringKeys`方法比较类似，但是使用使用整型和布尔型作为哈希的键。用来确保它们都能各自转换为`*ast.IntegerLiteral`和`ast.Boolean`。在这里第五个测试函数确保哈希表中的值可以是任何表达式，甚至是操作符表达式。
+```go
+func TestParsingHashLiteralWithExpression(t *testing.T) {
+	input := `{"one":0+1, "two":10 - 8, "three": 15/5}`
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+	stmt := program.Statements[0].(*ast.ExpressionStatement)
+	hash, ok := stmt.Expression.(*ast.HashLiteral)
+	if !ok {
+		t.Fatalf("exp is not ast.HashLiteral. got=%T",
+			stmt.Expression)
+	}
+	if len(hash.Pairs) != 3 {
+		t.Errorf("hash.Pairs has wrong length. got=%d",
+			len(hash.Pairs))
+	}
+	tests := map[string]func(ast.Expression){
+		"one": func(e ast.Expression) {
+			testInfixExpression(t, e, 0, "+", 1)
+		},
+		"two": func(e ast.Expression) {
+			testInfixExpression(t, e, 10, "-", 8)
+		},
+		"three": func(e ast.Expression) {
+			testInfixExpression(t, e, 15, "/", 5)
+		},
+	}
+	for key, value := range hash.Pairs {
+		literal, ok := key.(*ast.StringLiteral)
+		if !ok {
+			t.Errorf("key is not ast.StringLiteral. got=%T", key)
+			continue
+		}
+		testFunc, ok := tests[literal.String()]
+		if !ok {
+			t.Errorf("No test function for key %q found", literal.String())
+			continue
+		}
+		testFunc(value)
+	}
+}
+```
+所以这些测试函数工作如何呢？说实话，我们将会得到测试不通过和解析的错误。
+```
+$ go test ./parser
+--- FAIL: TestParsingHashLiteralWithExpression (0.00s)
+--- FAIL: TestParsingHashLiteralsStringKeys (0.00s)
+--- FAIL: TestParsingHashLiteralsBooleanKeys (0.00s)
+--- FAIL: TestParsingHashLiteralsIntegerKeys (0.00s)
+--- FAIL: TestParsingHashLiteralsWithExpressions (0.00s)
+FAIL
+FAIL monkey/parser 0.008s
+```
+说起来可能不信，好消息只需要一个函数能够让所有测试通过，确切来说就是`prefixParseFn`函数。由于`token.LBRACE`在哈希表中属于前缀表达式，就跟解析数组中的`token.LBRACKET`一样， 我们可以定义一个`parseHashLiteral`方法来作为`prefixParseFn`。
+```go
+// parser/parser.go
+func New(l *lexer.Lexer) *Parser {
+//[...]
+    p.registerPrefix(token.LBRACE, p.ParseHashLiteral)
+//[...]
+}
+func (p *Parser) parseHashLiteral() ast.Expression {
+	hash := &ast.HashLiteral{Token: p.curToken}
+	hash.Pairs = make(map[ast.Expression]ast.Expression)
+	for !p.peekTokenIs(token.RBRACE) {
+		p.nextToken()
+		key := p.parseExpression(LOWEST)
+		if !p.expectPeek(token.COLON) {
+			return nil
+		}
+		p.nextToken()
+		value := p.parseExpression(LOWEST)
+		hash.Pairs[key] = value
+		if !p.peekTokenIs(token.RBRACE) && !p.expectPeek(token.COMMA) {
+			return nil
+		}
+	}
+	if !p.expectPeek(token.RBRACE) {
+		return nil
+	}
+	return hash
+}
+```
+它看上去很恐怖，但是在`parseHashLiteral`中没有任何新的东西，它仅仅是不停循环整个`key-value`表达式对，并且检查`token.RBRACE`调用`parseExpression`两次。这就完成了`hash.Pairs`中最重要的部分，工作很棒！
+```
+$ go test ./parser
+ok monkey/parser 0.006s
+```
+所有的解析测试通过了，通过增加测试的数量，我们可以有理由确信我们的解析器知道如何正确处理哈希表。这也是意味着我们将要为我们的解释器中的哈希表最有趣的部分：表示哈希表中的对象系统和执行哈希表。
+
+**哈希对象**
 
 
 <h2 id="ch05-the-grand-finale">5.6 完结</h2>
