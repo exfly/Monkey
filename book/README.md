@@ -3776,7 +3776,21 @@ hash["name"]
 
 原因是它们是指向不同内存位置的指针，但是事实它们内存指向的位置内容并没有关系。比较这些指针将会告诉我们他们是不同的，也就一位置我们新创建的`*object.String`作为`key`并不能得到`Monkey`。这也是Go语言中指正比较不同。
 
+接下来的例子就是展示我们使用`object.Hash`所面临的的难题。
+```go
+name1 := &object.String{Value:"name"}
+monkey := &object.String{Value:"Monkey"}
 
+pairs := map[object.Object]object.Object{}
+pairs[name1] = monkey
+fmt.Printf("pairs[name1]=%+v\n", pairs[name1])
+//=> pairs[name1]=&{Value:Monkey}
+name2 := &obejct.String{Value:"name"}
+fmt.Printf("pairs[name2]=%+v\n", pairs[name2])
+//=> paris[name2]=<nil>
+fmt.Printf("(name1==name2)=%\t\n", name1==name2
+//=> (name1 == name2)=false
+```
 <h2 id="ch05-the-grand-finale">5.6 完结</h2>
 
 <h1 id="ch06-resource">6 资源</h1>
