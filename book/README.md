@@ -3791,8 +3791,512 @@ fmt.Printf("pairs[name2]=%+v\n", pairs[name2])
 fmt.Printf("(name1==name2)=%\t\n", name1==name2
 //=> (name1 == name2)=false
 ```
-<h2 id="ch05-the-grand-finale">5.6 完结</h2>
+其中的一个解决方案就是迭代`.Pairs`中键，检查`.object.String`的`.Value`字段，判断他们是否相等。但是这种方法将会使得查找特定`key`的时间复杂度冲`O(1)`变成`O(n)`，这个完全违背了我们当初选择哈希的意图。
 
+另外一种选择方案是定义`Pairs`作为`map[string]Object`， 然后是用`.Value`字段`.object.String`作为其中作为键，虽然有效，但是对于整数和布尔型数据不起作用。
+
+我们现在要做的为哈希表创建一个键，使得他们很容易的区分开来。我们需要为`object.String`生成一个哈希键，并且对于相同的`object.String`比较是相同的。 对于`object.Integer`和`object.Boolean`也是同样如此。但是对于`*object.String`和`*object.Integer`或者`*object.Boolean`必须不可能相等，这些哈希的键值必须不能相等。
+
+接下来是一组测试函数，它们表达了我们想要在我们的对象系统的期望的行为：
+```go
+// object/object_test.go
+package object
+import "tesing"
+func TestStringHashKey(t *testing.T) {
+	hello1 := &String{Value: "Hello World"}
+	hello2 := &String{Value: "Hello World"}
+	diff1 := &String{Value: "My name is johnny"}
+	diff2 := &String{Value: "My name is johnny"}
+	if hello1.HashKey() != hello2.HashKey() {
+		t.Errorf("string with same content have different keys")
+	}
+	if diff1.HashKey() != diff2.HashKey() {
+		t.Errorf("string with same content have differnet keys")
+	}
+	if hello1.HashKey() == diff1.HashKey() {
+		t.Errorf("string with different have same hash key")
+	}
+}
+```
+从`HashKey()`方法就是的确我们想要得到的，不仅仅是`*object.String`而且是`*object.Boolean`和`*object.Integer`，这也是同样的测试函数都存在的原因。
+
+接下来我们将要为以下三个类型都实现`HashKey()`方法。
+```go
+//obejct/object.go
+import (
+// [...]
+    "hash/fnv"
+)
+type HashKey() struct {
+    Type ObjectType
+    Value uint64
+}
+func (b *Boolean) HashKey() HashKey {
+    var value uint64
+    if b.Value {
+        value = 1
+    }else{
+        value = 0
+    }
+    return HashKey{Type: b.Type(), Value: uint64(i.Value)}
+}
+func (i *Integer) HashKey() HashKey {
+    return HashKey{Type: i.Type(), Value: uint64(i.Value)}
+}
+func (s *String) HashKey() HashKey {
+    h := fnv.New64a()
+    h.Write([]byte(s.Value))
+    return HashKey{Type: s.Type(), Value: h.Sum64()}
+}
+```
+每一个`HashKey()`方法返回一个`HashKey`，就跟你看到定义的一样，`HashKey`并没有什么神奇的地方，`Type`字段包含了一个`Object.Type`，它能有效的区分不同类型的键值。 `Value`字段包含了真正哈希值，就是一个整数。由于他们就是整数，所以我们对于不同的`HashKey`使用`==`操作符来比较不同。这也意味着我们使用`HashKey`就跟Go语言中`map`一样。
+
+现在先前的问题可以使用`HashKey`来解决。
+```go
+name1 := &object.String{Value: "name"} monkey := &object.String{Value: "Monkey"}
+pairs := map[object.HashKey]object.Object{} pairs[name1.HashKey()] = monkey
+fmt.Printf("pairs[name1.HashKey()]=%+v\n", pairs[name1.HashKey()]) 
+// => pairs[name1.HashKey()]=&{Value:Monkey}
+name2 := &object.String{Value: "name"} fmt.Printf("pairs[name2.HashKey()]=%+v\n", pairs[name2.HashKey()])
+// => pairs[name2.HashKey()]=&{Value:Monkey}
+fmt.Printf("(name1 == name2)=%t\n", name1 == name2) // => (name1 == name2)=false
+fmt.Printf("(name1.HashKey() == name2.HashKey())=%t\n", name1.HashKey() == name2.HashKey())
+// => (name1.HashKey() == name2.HashKey())=true
+```
+就这事我们想要的，`HashKey`中定义的`HashKey()`方法可以很好地解决使用原生的`Hash`定义，这也让测试通过。
+```
+$ go test ./object
+ok monkey/object 0.008s
+```
+现在我们可以顶一个`object.Hash`，并且使用新的`HashKey`类型：
+```go
+//object/object.go
+const (
+// [...]
+    HASH_OBJ = "HASH"
+)
+type HashPair struct {
+    Key Object
+    Value Object
+}
+type Hash struct {
+    Pairs map[HashKey]HashPair
+}
+func (h *Hash) Type() ObjectType { return HASH_OBJ }
+```
+增加了`Hash`和`HashPair`，`HashPair`是`Hash.Pairs`的值类型。你可能会奇怪为什么我们不直接定义`map[HashKey]Object`来代替`Pairs`
+
+原因就在于`Inspect()`方法，当我们在REPL中输出Monkey中的哈希表时候，我们想要打印出每一个值关联的的键，仅仅打印出`HashKey`是没有用的。所以我们记录每一个`HashKey`关联的对象，通过使用`HashPairs`是有用的。在这里我们保存了原先的键对象和值对象。通过这种方法，我们调用`Inspect()`方法，可以生成`*object.Hash`对象，下面就是`Inspect()`方法实现：
+```go
+//object/object.go
+func (h *Hash) Inspect() string {
+	var out bytes.Buffer
+	pairs := make([]string, 0)
+	for _, pair := range h.Pairs {
+		pairs = append(pairs, fmt.Sprintf("%s: %s",
+			pair.Key.Inspect(), pair.Value.Inspect()))
+	}
+	out.WriteString("{")
+	out.WriteString(strings.Join(pairs, ", "))
+	out.WriteString("}")
+	return out.String()
+}
+```
+`Inspect()`方法不是唯一我们记录对象的`HashKey`原因，它也是非常重要我们想要实现`range`函数，为每个哈希对象迭代它们的每一个键值。或者我们想要增加`firstPair`函数，它返回第一个键值对，就跟数组一样。总之，记录键值对是非常有用的，尽管现在我们好像在`Inspect`中使用了它们。
+
+现在好像所有都完成了，但是我们还有一件小事需要去完成：
+```go
+//object/object.go
+type Hashable interface {
+    HashKey() HashKey
+}
+```
+在这里我们使用`Hashable`接口，来确保给定的对象使用可以使用哈希键，目前来讲只有`*object.String`，`*object.Boolean`和`*object.Integer`对象实现了这个接口。
+
+现在还有一件事需要做，我们可以优化`HashKey()`方法，可以借助他们的缓存值，这个听上去是个不错的性能优化的优化方法。
+
+**执行哈希表**
+
+我们将要开始执行哈希表而且我很诚实地告诉你，最难的部分已经过去了。让我们享受这个过程，编写一些测试：
+```go
+func TestHashLiterals(t *testing.T) {
+	input := `let two="two";
+	{
+		"one":10-9,
+		two:1+1,
+		"thr" + "ee" : 6/2,
+		4 : 4,
+		true:5,
+		false:6
+	}`
+	evaluated := testEval(input)
+	result, ok := evaluated.(*object.Hash)
+	if !ok {
+		t.Fatalf("Eval did't return Hash. got=%T(%+v)",
+			evaluated, evaluated)
+	}
+	expected := map[object.HashKey]int64{
+		(&object.String{Value: "one"}).HashKey():   1,
+		(&object.String{Value: "two"}).HashKey():   2,
+		(&object.String{Value: "three"}).HashKey(): 3,
+		(&object.Integer{Value: 4}).HashKey():      4,
+		TRUE.HashKey():                             5,
+		FALSE.HashKey():                            6,
+	}
+	if len(result.Pairs) != len(expected) {
+		t.Fatalf("Hash has wrong num of pairs. got=%d", len(result.Pairs))
+	}
+	for expectedKey, expectedValue := range expected {
+		pair, ok := result.Pairs[expectedKey]
+		if !ok {
+			t.Errorf("no pair for given key in Pairs")
+		}
+		testDecimalObject(t, pair.Value, expectedValue)
+	}
+
+}
+```
+这个测试函数展示了当我们遇到`*ast.HashLiteral`的时候，如何执行`Eval`:一个`*object.Hash`对象包含许多`HashPair`，将他们映射到对应的`HashKey`中。
+
+它同样展示其他的要求：字符串、标识符、中缀表达式、布尔型和整型都是合法的键。任何表达式都是合法的，只要它们能够生成的对象实现了`Hashable`接口，那么就可以作为哈希键。
+
+它们的值可以有任何表达式推导出来。在这里我们通过`10-9`来生成`1`，`6 / 2`变成`3`来进行测试。
+
+正如你期望的，测试是失败的：
+```
+$go test ./evalutor
+--- FAIL: TestHashLiterals (0.00s)
+evalutor_test.go: 522: Eval didn't return Hash. got=<nil>(<nil>)
+FAIL
+FAIL monkey/evalutor 0.008s
+```
+尽管我们知道如何让测试通过，我们需要拓展我们的`Eval`函数通过增加`*ast.HashLiterals`分支。
+```go
+//evalutor/evalutor.go
+func Eval(node ast.Node, env *object.Environment) object.Obejct {
+// [...]
+    case *ast.HashLiteral:
+        return evalHashLiteral(node, env)
+// [...]
+}
+```
+这个`evalHashLiteral`函数可能看上去非常吓人，但是相信我，非常简单：
+```go
+//evaluator/evaluator.go
+func evalHashLiteral(node *ast.HashLiteral, env *object.Environment) object.Object {
+	pairs := make(map[object.HashKey]object.HashPair)
+	for keyNode, valueNode := range node.Pairs {
+		key := Eval(keyNode, env)
+		if isError(key) {
+			return key
+		}
+		hashKey, ok := key.(object.Hashable)
+		if !ok {
+			return newError("unusable as hash key: %s", key.Type())
+		}
+		value := Eval(valueNode, env)
+		if isError(value) {
+			return value
+		}
+		hashed := hashKey.HashKey()
+		pairs[hashed] = object.HashPair{Key: key, Value: value}
+
+	}
+	return &object.Hash{Pairs: pairs}
+}
+```
+当迭代`node.Pairs`时候，`keyNode`首先被执行，除了检查它调用`Eval`函数的时候是否出现错误，我们同样做了一次类型判断：它是否实现了`object.Hashable`接口，否则它不能作为哈希键。这也是我们为什么增加`Hashbale`定义。
+
+当我们再次调用`Eval`函数，去执行`valueNode`。如果没有生成错误，那么我们将新生成的键值对存放到我们的`pairs`字典中。我们通过调用`HashKey`对象调用`HashKey()`方法生成一个键。然后初始化一个新的`HashPair`，并且指向`key`和`value`然后将他们添加到`pairs`中。
+
+现在我们的测试通过:
+```
+$ go test ./evaluator
+ok monkey/evaluator 0.007s
+```
+这也意味着我们可以在我们的REPL中使用哈希表：
+```
+$ go run main.go
+Hello mrnugget! This is the monkey programming language!
+Feel free to type in commands
+>> {"name": "Monkey", "age":0, "type":"Language", "status":"awesome"}
+{age:0, type: language, status:awesome, name:Monkey}
+```
+是不是很神奇？但是我们现在还不能获取哈希表中的元素，这个好像让他们看上去没啥用处。
+```
+>> let bob = {"name": "Bob", "age", 99}
+>> bob["name"]
+ERROR: index operator not supported: HASH
+```
+接下来我们将会修复这个问题
+
+**执行哈希表的索引表达式**
+
+还记得我们在`evalIndexExpression`中增加的`switch`语句吗？还记得我曾经告诉你我们将会增加其他`case`分支，现在我们就来做这件事。
+
+开始我们增加一些测试函数来确保我们可以通过索引表达式访问哈希表中的值：
+```go
+//evaluator/evaluator.go
+func TestHashIndexExpression(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected interface{}
+	}{
+		{
+			`{"foo":5}["foo"]`,
+			5,
+		},
+		{
+			`{"foo":5}["bar"]`,
+			nil,
+		},
+		{
+			`let key = "foo"; {"foo":5}[key]`,
+			5,
+		},
+		{
+			`{}["foo"]`,
+			nil,
+		},
+		{
+			`{5:5}[5]`,
+			5,
+		},
+		{
+			`{true:5}[true]`,
+			5,
+		},
+		{
+			`{false:5}[false]`,
+			5,
+		},
+	}
+	for _, tt := range tests {
+		evaluated := testEval(tt.input)
+		integer, ok := tt.expected.(int)
+		if ok {
+			testDecimalObject(t, evaluated, int64(integer))
+		} else {
+			testNullObject(t, evaluated)
+		}
+	}
+}
+```
+就跟`TestArrayIndexExpression`中一样，我们确保我们使用索引表达式能够得到正确的值，只不过这次是哈希表。不同的是在测试用例中我们使用字符串、整型和布尔型哈希键来获取哈希表中的值。所以从本质上来讲就是这些测试就是用来判断这个`HashKey`方法在不同数据类型情况下是否正确调用。
+
+同样这边确保如果使用一个没有实现`object.Hashable`对象作为哈希表中的键将会生成一个错误，我们可以在`TestErrorHandling`测试函数中增加相应的测试用例。
+```go
+//evaluator/evaluator.go
+func TestErrorHandling(t *testing.T){
+    tests := []struct{
+        input string
+        expectedMessage string
+    }{
+//[...]
+        {
+            `{"name", "monkey"}[fn(x){x}]`,
+            "unusable as hash key: FUNCTION",
+        },
+    }
+// [...]
+}
+```
+运行这些测试将会导致测试失败：
+```
+$ go test ./evalutor
+--- FAIL: TestErrorHandling (0.00s)
+evaluator_test.go: no error obejct returned. got=*obejct.Null(&n{})
+--- FAIL: TestHashIndexExpression(0.00s)
+evaltor_test.go:611: object is not Integer. got=*object.Null(&{})
+evaltor_test.go:611: object is not Integer. got=*object.Null(&{})
+evaltor_test.go:611: object is not Integer. got=*object.Null(&{})
+evaltor_test.go:611: object is not Integer. got=*object.Null(&{})
+evaltor_test.go:611: object is not Integer. got=*object.Null(&{})
+evaltor_test.go:611: object is not Integer. got=*object.Null(&{})
+FAIL
+FAIL monkey/evalutor 0.007s
+```
+这也意味着我们要在`evalIndexExpression`函数中的`switch`语句中增加新的`case`分支：
+```go
+//evalutor/evaluator.go
+func evalIndexExpression(left, index object.Object) object.Object {
+	switch {
+	case left.Type() == object.ARRAY_OBJ && index.Type() == object.INTEGER_OBJ:
+		return evalArrayIndexExpression(left, index)
+	case left.Type() == object.HASH_OBJ:
+		return evalHashIndexExpression(left, index)
+	default:
+		return newError("index operator not support:%s", left.Type())
+	}
+}
+```
+现在新的分支调用新的函数：`evalHashInexExpression`。现在我们已经知道`evalHashInexExpression`该如何去工作，因为我们成功测试`object.Hashable`如何使用。
+```go
+func evalHashIndexExpression(hash, index object.Object) object.Object {
+	hashObject := hash.(*object.Hash)
+	key, ok := index.(object.Hashable)
+	if !ok {
+		return newError("unusable as hash key: %s", index.Type())
+	}
+	pair, ok := hashObject.Pairs[key.HashKey()]
+	if !ok {
+		return NULL
+	}
+	return pair.Value
+}
+```
+增加`evalHashIndexExpression`可以使得我们的测试通过：
+```
+$ go test ./evaluator
+ok monkey/evalutor 0.007s
+```
+现在我们成功地从哈希表中获取相应的值，不信就可以往下看：
+```
+$ go run main.go
+Hello mrnugget! This is the monkey programming language!
+Feel free to type in commands
+>> let people = [{"name": "Alice", "age": 24}, {"name":"Anna", "age":28}];
+>> people[0]["name"]
+Alice
+>> people[1]["age"]
+28
+>> people[1]["age] + people[0]["age"]
+52
+>> let getName = fn(person){ person["name"];};
+>> getName(people[0]);
+Alice
+>> getName(people[1]);
+Anna
+```
+<h2 id="ch05-the-grand-finale">5.6 完结</h2>
+我们Monkey解析器完全是函数式的，它支持数学表达式，变量绑定，函数和函数的调用，条件表达式、返回语句甚至更高级的概念，比如高阶函数和闭包。还有不同的数据类型：整型、布尔型、字符串、数组和哈希表。我们可以为此感到骄傲。
+
+但是我们的解释器还不能通过基础的编程语言测试：输出。是的，我们的Monkey解释器不能喝外部交流。甚至其他语言如`Bash`和`Brainfuck`都能够做到这点，显然我们也要完成这个。接下来我们要增加最后一个内置函数`puts`
+
+`puts`输出给定的参数到`STDOUT`。它调用穿入参数对象`Inspect()`方法并且将他们返回值输出。`Inspect()`方法是`Obejct`接口对象，所以每一个实体都支持这个方法，使用`puts`函数看上去是这样的：
+```
+>> puts("Hello!")
+Hello!
+>> puts(1234)
+1234
+>> puts(fn(x){x(x)})
+fn(x) {
+    (x * x)
+}
+```
+`puts`函数是可变参数的函数，它接受无限制数量的参数，并且将每一个参数按行输出
+```
+>> puts("hello", "world", "how", "are", "you")
+hello
+world
+how
+are
+you
+```
+`puts`仅仅是输出并不生成任何值，我们确保他返回一个`NULL`:
+```
+>> let putReturnValue = puts("foobar")
+foobar
+>>putReturnValue
+null
+```
+这也意味着我们的REPL将除了输出`puts`的内容外，还会输出一个`null`对象，它看上去像这样：
+```
+>>puts("Hello!")
+Hello!
+null
+```
+现在还有更多的信息和说明来完成最后一个请求，这也是我们这一小节将要构建的，实现`puts`函数如下：
+```go
+//evaluator/builtins.go
+import (
+    "fmt"
+    "monkey/object"
+    "unicode/utf8"
+)
+var builtins = map[string]*object.Builtin{
+// [...]
+    "puts": &object.Builtin{
+        Fn: func(args ...object.Object) object.Object {
+            for _, arg := range args {
+                fmt.Println(arg.Inspect())
+            }
+            return NULL
+        }
+    }
+}
+```
+通过上述，我们完成了。
+在第三章中，Monkey编程语言诞生了，现在它开始呼吸。通过本章，它似乎开始说话了。现在Monkey就是一个真实的编程语言：
+```
+$ go run main.go
+Hello mrnugget! This is the monkey programming language!
+Feel free to type in commands
+>> puts("Hello World!")
+Hello world!
+null
+```
 <h1 id="ch06-resource">6 资源</h1>
+
+**书籍**
+
+- Abelson, Harold and Sussman, Gerald Jay with Sussman, Julie. 1996. Structure and Interpretation of Computer Programs, Second Edition. MIT Press.
+- Appel, Andrew W.. 2004. Modern Compiler Implementation in C. Cambridge University Press.
+- Cooper, Keith D. and Torczon Linda. 2011. Engineering a Compiler, Second Edition. Morgan Kaufmann.
+- Grune, Dick and Jacobs, Ceriel. 1990. Parsing Techniques. A Practical Guide.. Ellis Horwood Limited.
+- Grune, Dick and van Reeuwijk, Kees and Bal Henri E. and Jacobs, Ceriel J.H. Jacobs and Langendoen, Koen. 2012. Modern Compiler Design, Second Edition. Springer
+- Nisan, Noam and Schocken, Shimon. 2008. The Elements Of Computing Systems. MIT Press.
+
+**论文**
+
+- Ayock, John. 2003. A Brief History of Just-In-Time. In ACM Computing Surveys, Vol. 35, No. 2, June 2003
+- Ertl, M. Anton and Gregg, David. 2003. The Structure and Performance of Efficient Interpreters. In Journal Of Instruction-Level Parallelism 5 (2003)
+- Ghuloum, Abdulaziz. 2006. An Incremental Approach To Compiler Construction. In Proceedings of the 2006 Scheme and Functional Programming Workshop.
+- Ierusalimschy, Robert and de Figueiredo, Luiz Henrique and Celes Waldemar. The Implementation of Lua 5.0. [https://www.lua.org/doc/jucs05.pdf](https://www.lua.org/doc/jucs05.pdf)
+- Pratt, Vaughan R. 1973. Top Down Operator Precedence. Massachusetts Institute of Technology.
+- Romer, Theodore H. and Lee, Dennis and Voelker, Geoffrey M. and Wolman, Alec and Wong, Wayne A. and Baer, Jean-Loup and Bershad, Brian N. and Levy, Henry M.. 1996. The Structure and Performance of Interpreters. In ASPLOS VII Proceedings of the seventh international conference on Architectural support for programming languages and operating systems.
+- Dybvig, R. Kent. 2006. The Development of Chez Scheme. In ACM ICFP '06
+
+**网络资源**
+- Jack W. Crenshaw - Let's Build a Compiler! -
+[http://compilers.iecc.com/crenshaw/tutorfinal.pdf](http://compilers.iecc.com/crenshaw/tutorfinal.pdf)
+- Bob Nystrom - Pratt Parsers: Expression Parsing Made Easy -[http://journal.stuffwithstuff.com/2011/03/19/pratt-parsers-expression-parsing-made-easy/](http://journal.stuffwithstuff.com/2011/03/19/pratt-parsers-expression-parsing-made-easy/)
+- Shriram Krishnamurthi and Joe Gibbs Politz - Programming Languages: Application and Interpretation - (http://papl.cs.brown.edu/2015/)[http://papl.cs.brown.edu/2015/]
+- A Python Interpreter Written In Python - [http://aosabook.org/en/500L/a-python-interpreter- written-in-python.html](http://aosabook.org/en/500L/a-python-interpreter- written-in-python.html)
+- Dr. Dobbs - Bob: A Tiny Object-Oriented Language - [http://www.drdobbs.com/open- source/bob-a-tiny-object-oriented-language/184409401](http://www.drdobbs.com/open- source/bob-a-tiny-object-oriented-language/184409401)
+- Nick Desaulniers - Interpreter, Compiler, JIT - [https://nickdesaulniers.github.io/blog/2015/05/25/interpreter-compiler-jit/](https://nickdesaulniers.github.io/blog/2015/05/25/interpreter-compiler-jit/)
+- Peter Norvig - (How to Write a (Lisp) Interpreter (in Python)) - [http://norvig.com/lispy.html](http://norvig.com/lispy.html ) 
+- Fredrik Lundh - - Simple Town-Down Parsing In Python - [http://effbot.org/zone/simple-top-down-parsing.html](http://effbot.org/zone/simple-top-down-parsing.html)
+- Mihai Bazon - How to implement a programming language in JavaScript - [http://lisperator.net/pltut/](http://lisperator.net/pltut/)
+- Mary Rose Cook - Little Lisp interpreter - [https://www.recurse.com/blog/21-little-lisp-interpreter](https://www.recurse.com/blog/21-little-lisp-interpreter)
+- Peter Michaux - Scheme From Scratch - [http://peter.michaux.ca/articles/scheme-from-scratch-introduction](http://peter.michaux.ca/articles/scheme-from-scratch-introduction)
+- Make a Lisp - [https://github.com/kanaka/mal]( https://github.com/kanaka/mal)
+- Matt Might - Compiling Scheme to C with closure conversion - [http://matt.might.net/articles/compiling-scheme-to-c/](http://matt.might.net/articles/compiling-scheme-to-c/)
+- Rob Pike - Implementing a bignum calculator - [https://www.youtube.com/watch?v=PXoG0WX0r_E](https://www.youtube.com/watch?v=PXoG0WX0r_E)
+- Rob Pike - Lexical Scanning in Go - [https://www.youtube.com/watch?v=HxaD_trXwRE](https://www.youtube.com/watch?v=HxaD_trXwRE)
+
+**源码**
+
+- The Wren Programming Language - [https://github.com/munificent/wren](https://github.com/munificent/wren)
+- Otto - A JavaScript Interpreter In Go - [https://github.com/robertkrimen/otto](https://github.com/robertkrimen/otto)
+- The Go Programming Language - [https://github.com/golang/go](https://github.com/golang/go)
+- The Lua Programming Language (1.1, 3.1, 5.3.2) - [https://www.lua.org/versions.html](https://www.lua.org/versions.html)
+- The Ruby Programming Language - [https://github.com/ruby/ruby](https://github.com/ruby/ruby)
+- c4 - C in four functions - [https://github.com/rswier/c4](https://github.com/rswier/c4)
+- tcc - Tiny C Compiler - [https://github.com/LuaDist/tcc](https://github.com/LuaDist/tcc)
+- 8cc - A Small C Compiler - [https://github.com/rui314/8cc](https://github.com/rui314/8cc)
+- Fedjmike/mini-c - [https://github.com/Fedjmike/mini-c](https://github.com/Fedjmike/mini-c)
+- thejameskyle/the-super-tiny-compiler - [https://github.com/thejameskyle/the-super-tiny-compiler](https://github.com/thejameskyle/the-super-tiny-compiler)
+- lisp.c - [https://gist.github.com/sanxiyn/523967](https://gist.github.com/sanxiyn/523967)
+
+
 <h1 id="ch07-feedback">7 反馈</h1>
 
+如果你发现了输入错误、代码中的一些错误、提供一些建议或者仅仅问一些问题，尽管给我发邮件：
+
+me@thorstenball.com
+
+(译者注：)
+如果发现翻译错误或者更改，也同样给我([gaufung](https://github.com/gaufung))发邮件：
+
+gaufung@outlook.com
