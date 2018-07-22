@@ -66,5 +66,64 @@ func (p *Program) TokenLiteral() string {
 ```
 `Program`节点是每一个抽象语法树的根节点，每一个合法的Monkey程序都是一系列语句，这些语句被保存在`Program.Statement`中，它是一系列实现`Statement`接口的节点组成。
 
+有了这些AST基础模块定义，让我们想想什么样的节点能够表示`let x = 5;`，会有那些字段？定义一个变量的名称，同样我们也需要一个字段来表示等号右边的表达式，它可以指向任何表达式。它不只是指向字面值（在这个例子中是5），因为任何等号右边表达式都是相同的，比如：`let x = 5 * 5;`和`let y = add(2, 2) * 5 / 10;` 都是有效的。为了跟踪记录抽象语法树中的每一个节点，我们需要实现`TokenLiteral()`方法。它有三个字段构成：一个是标识符，一个是可以生成值的表达式，最后是token。
 
+```go
+// ast/ast.go
+import "monkey/token"
+// [...]
+type LetStatement struct {
+    Token token.Token
+    Name *Identifier
+    Value Expression
+}
+func (ls *LetStatement) statementNode() {}
+func (ls *LetStatement) TokenLiteral() string { return ls.Token.Literal}
 
+type Identifier struct {
+    Token token.Token // the token.IDENT token
+    Value string
+}
+func (i *Identifier) expressionNode() {}
+func (i *Identifier) TokenLiteral() string { return i.Token.Literal }
+```
+`LetStatement`拥有以下字段：`Name`用来保存绑定的标识符；`Value`用来保存表达式生成的值。`statementNode`和`TokenLiteral`方法用来满足`Statement`和`Node`接口。
+
+为了保存标识符绑定值，`let x= 5;`中的`x`。我们需要定义`Identifier`结构，它实现了`Expression`接口，但是在let语句中它不生成值，为什么我们定义一个`Expression`接口，主要是简化问题。标识符在Monkey语言其他部分中会生成值，比如`let x = valueProducingIdentifier;`中，为了让数据类型数量变少，我们将使用`Identifier`来表示被绑定的值，以便后来重用它们，所以标识符实现了expression接口。
+
+`Program`，`LetStatement`和`Identifier`构成了Monkey语言的源代码一部分：
+```go
+let x = 5;
+```
+它可以用抽象语法树表示如下：
+![](../figures/ast1.png)
+现在我们知道它应该长什么样，下一个任务就是构建一棵抽象语法树，首先我们的解析器是这样的：
+
+```go
+//parser/parser.go
+package parser
+import (
+    "monkey/ast"
+    "monkey/lexer"
+    "monkey/token"
+)
+type Parser struct {
+    l *lexer.Lexer
+    curToken token.Token
+    peekToken token.Token
+}
+func New(l *lexer.Lexer) *Parser {
+    p := &Parser{l: l}
+    //Read two tokens, so curToken and peekToken are both set
+    p.nextToken()
+    p.nextToken()
+    return p
+}
+func (p *Parser) nextToken(){
+    p.curToken = p.peekToken
+    p.peekToken= p.l.NextToken()
+}
+func (p *Parser) ParserProgram() *ast.Program{
+    return nil
+}
+```
