@@ -127,3 +127,144 @@ func (p *Parser) ParserProgram() *ast.Program{
     return nil
 }
 ```
+`Parser`拥有三个字段，分别为`l`，`curToken`和`peekToken`。其中`l`指向词法分析器的一个实例，通过它可以不听的调用`NextToken`方法来获取输入的下一个`token`。`curToken`和`peekToken`就像我们词法解析器拥有的两个指针`position`和`peekPosition`，但是它不是指向输入的字符，而是指向当前的`token`和下一个`token`，它们是同样重要的：我们需要查看当前输入的`token`，通过检查当前的`token`，来确定下一步需要做什么；同样也需要`peekToken`如果`curToken`不能做出相应的决定。比如考虑但单行语句`5;`，当前的`curToken`是`token.INT`，我们需要`peekToken`来决定我们是否在一行代码的末尾还是仅仅是算术表达式的开始。
+
+`New`函数非常明了，`nextToken`是一个小的帮助方法，它用来同时前进`curToken`和`peekToken`指针。现在目前`ParseProgram`是空的。
+
+在我们编写测试和填充`ParseProgram`方法之前，我先向你展示一下递归下降分析背后的基础思想和结构。它可以帮助我们很好的理解后面的分析器。接下来主要部分是解析器的伪代码。仔细阅读它并且尝试去理解`parseProgram`函数里发生了什么。
+```js
+function parseProgram() { 
+    program = newProgramASTNode()
+    advanceTokens()
+    for (currentToken() != EOF_TOKEN) {
+        statement = null
+        if (currentToken() == LET_TOKEN) { 
+            statement = parseLetStatement()
+        } else if (currentToken() == RETURN_TOKEN) { 
+            statement = parseReturnStatement()
+        } else if (currentToken() == IF_TOKEN) { 
+            statement = parseIfStatement()
+        }
+        if (statement != null) { 
+            program.Statements.push(statement)
+        }
+        advanceTokens() 
+    }
+    return program
+}
+function parseLetStatement() { 
+    advanceTokens()
+    identifier = parseIdentifier()
+    advanceTokens()
+    if currentToken() != EQUAL_TOKEN { 
+        parseError("no equal sign!") 
+        return null
+    }
+    advanceTokens()
+    value = parseExpression()
+    variableStatement = newVariableStatementASTNode() 
+    variableStatement.identifier = identifier 
+    variableStatement.value = value
+    return variableStatement
+function parseIdentifier() { 
+    identifier = newIdentifierASTNode() 
+    identifier.token = currentToken() 
+    return identifier
+}
+function parseExpression() {
+    if (currentToken() == INTEGER_TOKEN) {
+        if (nextToken() == PLUS_TOKEN) { 
+            return parseOperatorExpression()
+        } else if (nextToken() == SEMICOLON_TOKEN) { 
+            return parseIntegerLiteral()
+        }
+    } else if (currentToken() == LEFT_PAREN) {
+        return parseGroupedExpression() 
+    }
+        // [...]
+}
+function parseOperatorExpression() {
+    operatorExpression = newOperatorExpression()
+    operatorExpression.left = parseIntegerLiteral() 
+    operatorExpression.operator = currentToken() 
+    operatorExpression.right = parseExpression()
+    return operatorExpression() 
+}
+// [...]
+```
+虽然上面的伪代码中有很多省略，但是递归下降解析的基础思想是有的。入口是`parseProgram`函数，它构造了抽象语法树的根节点，然后通过调用其他函数构建孩子节点，语句。这些抽象语法树是基于当前`token`，其他函数也是相互调用，递归执行。
+
+最递归调用的部分在`parseExpression`中，但是我们已经知道为了解析表达式`5 + 5`，我们需要首先解析`5 +`然后再一次调用`parserExpression()`来解析剩下来的部分，因为在`+`后面可能是其他操作符表达式，比如`5+5*10`。我们将会接下来仔细查看解析该表达式的细节，因为他是解析中最复杂的部分同样也是最漂亮的部分，也就是`Pratt`解析。
+
+但是到现在，我们已经知道解析器将要做什么。它不停地读取`tokens`然后检查当前`token`来决定接下来需要做什么：是调用其他的解析函数呢还是抛出一个异常。每一个函数都有各自的任务，可能创建抽象语法树的节点。所以在`parseProgram()`中的主循环可以不停前进`token`来决定接下来做什么。
+
+如果你看了上述的伪代码，你可能会想：这看上去很容易理解嘛！我有一个很好的消息告诉你，我们`ParseProgram`方法和解析器看上去很类似，让我们开始工作吧！
+
+再一次，在我们编写`parseProgram`方法，我们可以编写测试。下面的测试可以确保`let`语句解析正确。
+
+```go
+// parser/parser_test.go
+package parser
+
+import (
+	"fmt"
+	"monkey/ast"
+	"monkey/lexer"
+	"testing"
+)
+
+func TestLetStatements(t *testing.T) {
+	tests := []struct {
+		input              string
+		expectedIdentifier string
+		expectedValue      interface{}
+	}{
+		{"let x =5;", "x", 5},
+		{"let z =1.3;", "z", 1.3},
+		{"let y = true;", "y", true},
+		{"let foobar=y;", "foobar", "y"},
+	}
+	for _, tt := range tests {
+		l := lexer.New(tt.input)
+		p := New(l)
+		program := p.ParseProgram()
+		checkParserErrors(t, p)
+		if len(program.Statements) != 1 {
+			t.Fatalf("program.Statements does not contain 1 statements. got=%d",
+				len(program.Statements))
+		}
+		stmt := program.Statements[0]
+		if !testLetStatement(t, stmt, tt.expectedIdentifier) {
+			return
+		}
+		val := stmt.(*ast.LetStatement).Value
+		if !testLiteralExpression(t, val, tt.expectedValue) {
+			return
+		}
+	}
+}
+
+func testLetStatement(t *testing.T, s ast.Statement, name string) bool {
+	if s.TokenLiteral() != "let" {
+		t.Errorf("s.TokenLiteral not 'let'. got %q", s.TokenLiteral())
+		return false
+	}
+	letStmt, ok := s.(*ast.LetStatement)
+	if !ok {
+		t.Errorf("s not *ast.LetStatement. got=%T", s)
+		return false
+	}
+	if letStmt.Name.Value != name {
+		t.Errorf("s.Name not '%s'. got=%s", name, letStmt.Name.Value)
+		return false
+	}
+	if letStmt.Name.TokenLiteral() != name {
+		t.Errorf("s.Name not '%s'. got=%s", name, letStmt.Name.Value)
+		return false
+	}
+	return true
+}
+```
+测试用例遵循我们先前词法解析器的测试规则，也是和其他每一个单元测试同样：我们提供Monkey代码作为输入，然后设置我们想要的抽象语法树的期待值，抽象语法树是由有解析器生成的。我们将会尽可能的检查抽象语法树的节点，确保我们没有丢失任何东西。
+
+我将不选择`Mock`或者`Stub`方法而是提供源代码作为输入而不是tokens，因为那样做的话将会让我们的测试可读和可理解。
