@@ -267,4 +267,187 @@ func testLetStatement(t *testing.T, s ast.Statement, name string) bool {
 ```
 测试用例遵循我们先前词法解析器的测试规则，也是和其他每一个单元测试同样：我们提供Monkey代码作为输入，然后设置我们想要的抽象语法树的期待值，抽象语法树是由有解析器生成的。我们将会尽可能的检查抽象语法树的节点，确保我们没有丢失任何东西。
 
-我将不选择`Mock`或者`Stub`方法而是提供源代码作为输入而不是tokens，因为那样做的话将会让我们的测试可读和可理解。
+我将不选择`Mock`或者`Stub`方法而是提供源代码作为输入而不是tokens，因为那样做的话将会让我们的测试可读和可理解。当然我们的词法解析器中的bug将会使我们的测试变得面目全非并且生成很多噪声。但是我尽量将这个风险降到最低，尤其是当比较实用源代码作为输入的时候的优势的的时候。
+
+在这里测试用例两个需要特别注意，第一个是我们忽略了`*ast.LetStatement`中的`Value`字段，为什么我们不去检查我们数字解析得是否正确呢？答案是我们是要做的，但是我们需要首先确保在解析`let`语句正确执行，所以忽略了`Value`字段。
+
+第二个是帮助函数`testLetStatement`，它看上去使用单独函数像是过度设计化，但是我们在将来很需要这个函数，它能够将我们的测试用例变得可读而不是一行行的类型转换。
+
+除此之外，在本章中我们将不会再次看全部的解析器测试，因为他们太长了，但是本书提供的代码包含全部代码。
+
+在开始之前，测试时失败的：
+```
+$ go test ./parser
+--- FAIL: TestLetStatement (0.00s)
+parser_test.go:20: ParseProgram() return nil
+FAIL
+FAIL monkey/parser 0.007s
+```
+是时候开始填充我们的`ParseProgram()`方法了：
+```go
+// parser/parser.go
+func (p *Parser) ParseProgram() *ast.Program{
+    program := &ast.Program{}
+    program.Statements = []ast.Statement{}
+    for p.curToken.Type != token.EOF {
+        stmt := p.parseStatement()
+        if stmt != nil {
+            program.Statements = append(program.Statements, stmt)
+        }
+        p.nextToken()
+    }
+    return program
+}
+```
+是不是看上去和`parseProgram()`伪代码函数非常相像？是的，我之前告诉你着很像。
+
+`parseProgram()`首先要做的事构建抽象语法树的根节点：`*ast.Program`，然后他迭代每一个`token`直至遇到`token.EOF`。它重复调用`nextToken`方法，该方法能够同时前进`p.curToken`和`p.peekToken`两个指针，每一次迭代调用`parseStatement`方法，它负责解析语句。如果它返回值不是`nil`而是`ast.Statement`，那么返回值将会添加到根节点的`Statements`切片中，如果没有任何`token`可供解析，那么`*ast.Program`将会被返回。
+
+那么`pasreStatement`方法看上去是这样的：
+```go
+// parser/parser.go
+func (p *Parser) parseStatement() *ast.Statement{
+    switch p.curToken.Type{
+    case token.LET:
+        return p.parseLetStatement()
+    default:
+        return nil
+    }
+}
+```
+不用担心，`switch`语句将会得到更多的分支，但是现在，它仅仅地调用`parseLetStatement`方法如果只遇到`token.LET`。`parseLetStatement`方法将会让我们的测试通过：
+```go
+//parser/parser.go
+func (p *Parser) parseLetStatement() *ast.LetStatement {
+    stmt := &ast.LetStatement{Token: p.curToken}
+    if !p.expectPeek(Token.IDENT){
+        return nil
+    }
+    stmt.Name = &ast.Identifer{Token:p.curToken, Value: p.curToken.Literal}
+    if !p.expectPeek(toekn.ASSIGN) {
+        return nil
+    }
+    // TODO: We're skipping the expression util we
+    // encoutner a semicolon
+    for !p.curTokenIs(token.SEMICOLON){
+        p.nextToken()
+    }
+    return stmt
+}
+func (p *Parser) curTokenIs(t token.TokenType) bool { 
+    return p.curToken.Type == t
+}
+func (p *Parser) peekTokenIs(t token.TokenType) bool { 
+    return p.peekToken.Type == t
+}
+func (p *Parser) expectPeek(t token.TokenType) bool { 
+    if p.peekTokenIs(t) {
+        p.nextToken()
+        return true 
+    } else {
+        return false
+    } 
+}
+```
+它奏效了，我们的测试通过了
+```
+$ go test ./parser
+ok monkey/parser 0.007s
+```
+我们可以解析`let`语句了，是不是很神奇，但是等等！
+
+让我们从`parseLetStatement`开始，它使用当前指向的`token`(`token.LET`)构建了`*ast.LetStatement`节点，然后调用`expectPeek`方法确保下一个`token`是否符合预期。首先它期待`token.IDENT`，然后使用它来构建一个`*ast.Identifer`节点，然后期待一个等号，最后它跳过了等号后面的表达式解析直到要一个冒号。只要我们知道如何解析表达式，跳过的部分将会被替换。
+
+`curTokenIs`和`peekTokenIs`方法不要太多的解释，它们非常有用，以至于我们在填充我们的解析器的时候一次次看到它们，我们可以用`!p.curToken(token.EOF)`代替for循环中`p.curToken.Type != token.EOF`条件。
+
+除了看看这些小方法， 让我们讨论一下`expectPeek`方法，`expectPeek`方法也是一个判断函数，它们原先的的目的是确保解析过程中`Token`的顺序是否正确。 我们`expectPeek`方法用来检查`peekToken`类型是否满足要求，只有满足要求才会调用`nextToken`方法。 正如你看到的，这个在解析器中频繁出现。
+
+但是如果我们遇到的`token`在`expectPeek`方法中不是期待的类型？目前，我们就是返回`nil`，在`ParseProgram`方法中将会忽略该空值。它会导致该语句会被忽略，因为错误的输入。你可以想象一下，它将会使得调试变得非常困难，因为没有人想接触那些没有么错误错误的解析器。
+
+幸运的是，我们将会做一些微小的改动来将解决该问题：
+```go
+// parser/parser.go
+type Parser struct { 
+// [...]
+errors []string 
+// [...]
+}
+func New(l *lexer.Lexer) *Parser { 
+    p := &Parser{
+        l: l,
+        errors: []string{}, 
+    }
+// [...]
+}
+func (p *Parser) Errors() []string { 
+    return p.errors
+}
+func (p *Parser) peekError(t token.TokenType) {
+    msg := fmt.Sprintf("expected next token to be %s, got %s instead", t, p.peekToken.Type)
+    p.errors = append(p.errors, msg) 
+}
+```
+现在解析器吼了`errors`字段，它们就是字符串切片，该字段在`New`方法的时候被初始化，当`peekToken`不匹配的时候，帮助函数`peekError`用来增加错误到`errors`中，通过使用`Errors`方法可以检查我们的解析器是否遇到任何错误。
+
+拓展我们的测试来确保这个和我们期望的是一样的：
+```go
+// parser/parser_test.go
+func TestLetStatements(t *testing.T) { 
+// [...]
+    program := p.ParseProgram() checkParserErrors(t, p)
+// [...]
+}
+func checkParserErrors(t *testing.T, p *Parser) { 
+    errors := p.Errors()
+    if len(errors) == 0 {
+        return
+    }
+    t.Errorf("parser has %d errors", len(errors)) 
+    for _, msg := range errors {
+        t.Errorf("parser error: %q", msg) 
+    }
+    t.FailNow() 
+}
+```
+新的`checkParserErrors`帮助函数仅仅是我们的解析器中的错误，如果有任何错误，它将错误输出并且停止当前测试。
+
+但是我们的当前解析器中没有生成任何错误，通过改变`epectPeek`我们可以自动增加一个错误如果我们调用得到错误的`token`。
+```go
+// parser/parser.go
+func (p *Parser) expectPeek(t token.TokenType) bool { 
+    if p.peekTokenIs(t) {
+        p.nextToken()
+        return true 
+    } else {
+        p.peekError(t)
+        return false
+    }
+}
+```
+现在我们可以改变我们的测试用例从这样：
+```
+input := `
+let x = 5;
+let y = 10;
+let foobar = 838383;
+`
+```
+变成每个一个输入都是无效的，因为都是了相关的`token`
+```
+input := ` let x 5;
+let = 10; 
+let 838383; `
+```
+我们运行我们的测试可以看到新的解析错误
+```
+$ go test ./parser
+--- FAIL: TestLetStatements (0.00s)
+parser_test.go:20: parser_test.go:22: got INT instead" parser_test.go:22:
+got = instead" parser_test.go:22: got INT instead"
+parser has 3 errors
+parser error: "expected next token to be =,\
+parser error: "expected next token to be IDENT,\ parser error: "expected next token to be IDENT,\
+FAIL
+FAIL monkey/parser 0.007s
+```
+正如你看到的，我们的解析器展示的一些微小的功能：它输出它遇到的每一个错误的语句。它没有在遇到第一个的时候就退出了，而是将他们保存下来以便我们重新运行程序去获取全部语法错误。它相当有用，尽管我们没有错误的行号和列号。
