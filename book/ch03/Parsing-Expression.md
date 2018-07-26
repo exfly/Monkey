@@ -96,3 +96,113 @@ Vaughan Patt在他的`指顶向下操作符优先级`论文中提出了新的方
 答案是我决定不采用这两种方式。我们接下来要做的不是实现解析表达式而是近距离地看这个算法。最后我们将会拓展和完成该算法使之能够解析Monkey中的所有的表达式。
 
 在开始编写代码之前，我们先厘清一些概念。
+
+**概念**
+
+`前缀操作符`是出现在操作符前面的操作符，比如：
+```
+--5
+```
+在这里操作符`--`，操作数是整数`5`，操作符出现在操作数前面。
+
+`后缀操作符`是出现操作数后面的操作符，比如：
+```
+foobar++
+```
+在这里操作符`++`，操作数是标识符`foobar`，操作符出现在操作数后面。在Monkey语言中，我们不会构建任何后缀操作数。不是因为技术上的限制，而是保持本书内容的范围。
+
+而`中缀操作符`我们先前已经看过了，它出现在两个操作符之间，比如
+```
+5 * 8
+```
+在这里`*`操作符出现在两个整数`5`和`8`之间，中缀操作符出现在二元表达式中。
+
+其他的概念我们已经接触到了，比如`操作符优先级`。也叫做`操作顺序`，它表明了不同操作符之间的优先级，一个重要的例子就是我们先前看到的：
+```
+5 + 5 * 10
+```
+上述表达式的结果是55不是100，那是因为`*`操作符有更高的优先级，它比`+`操作符更重要，它应该比其他的操作符先执行。我有时候想，操作符的优先级比作操作符的粘性：用来描述操作数应该和哪一个操作符粘在一起。
+
+这些事基础的概念:`前缀`, `后缀`, `中缀`和`优先级`。让这些概念在我们脑海中定义好是非常重要的。我们将会在其他地方使用它们。
+
+现在我们开始输入和编写一些代码！
+
+**准备抽象语法树**
+
+为了解析表达式，我们首先要做的是准备抽象语法树。 正如我们先前看到的，在Monkey中程序是由一系列的语句构成的。一些事`let`语句，其余的是`return`语句，我们需要添加第三种类型语句：表达式语句。
+
+这听上述非常混淆，我之前告诉你`let`和`return`语句是Monkey语言中唯二的语句，但是表示语句不是一种与众不同的语句；它是只有表达式构成的语句，它仅仅是一个封装器，我们的确需要它因为在Monkey中这是合法的。我们可以输入如下的代码：
+```
+let x = 5;
+x + 10;
+```
+第一行是一个`let`语句，第二行是表达式语句。其他语言中没有表达式语句，但是在大部分脚本语言中，只有一行表达式的代码是可能的。所以我们需要在抽象语法树中增加节点类型
+```go 
+// ast/ast.go
+type ExpressionStatement struct {
+    Token token.Token // the first token of the expression 
+    Expression Expression
+}
+func (es *ExpressionStatement) statementNode() {}
+func (es *ExpressionStatement) TokenLiteral() string { return es.Token.Literal }    
+```
+这个`ast.ExpressionStatement`类型有两个字段：一个是`Token`字段，这个每一个节点都用，另外是`Expression`字段，它用来保存表达式。`ast.ExpressionStatement`实现了`ast.Statement`接口，也就意味着我们可以将它添加到`ast.Program`的`Statement`切片中。这也是我们为什么添加`ast.ExressopnStatement`的原因。
+
+有了`ast.ExresspionStatement`定义，我们可以重用先前的工作。但是为了使我们的工作更轻松点，我们可以在我们抽象语法树节点添加`String()`方法。它允许我们输出抽象语法树节点，这样用来调试和比较其他节点。这样在测试中非常有用。
+
+我们将要让`String()`方法称为`Node`接口的一部分：
+```go
+// ast/ast.go
+type Node interface { 
+    TokenLiteral() string 
+    String() string
+}
+```
+现在`ast`包中每一个节点都需要实现该方法。由于这些改变，我们的代码将不会被编译，因为编译器认为我们的抽象语法树中的节点没有完全实现`Node`接口。首先我们先为`*ast.Program`添加`String()`方法：
+```go
+import (
+     // [...]
+    "bytes"
+)
+func (p *Program) String() string {
+    var out bytes.Buffer
+    for _, s := range p.Statements {
+        out.WriteString(s.String())
+    }
+    return out.String()
+}
+```
+该方法并没有做很多的工作，它仅仅是创建了一个缓冲对象，然后往避免添加每一个语句调用`String()`的返回值。然后将缓冲区对象作为字符串返回。它将全部工作交给了`*ast.Program`中的`Statement`来完成。
+
+真正的工作是由下面三个语句`ast.LetStatement`，`ast.ReturnStatement`和`ast.ExpressionStatement`的`String()`方法完成的。
+```go
+// ast/ast.go
+func (ls *LetStatement) String() string { 
+    var out bytes.Buffer
+    out.WriteString(ls.TokenLiteral() + " ") 
+    out.WriteString(ls.Name.String()) 
+    out.WriteString(" = ")
+    if ls.Value != nil { 
+        out.WriteString(ls.Value.String())
+    }
+    out.WriteString(";")
+    return out.String() 
+}
+func (rs *ReturnStatement) String() string { 
+    var out bytes.Buffer
+    out.WriteString(rs.TokenLiteral() + " ")
+    if rs.ReturnValue != nil { 
+        out.WriteString(rs.ReturnValue.String())
+    }
+    out.WriteString(";")
+    return out.String() 
+}
+func (es *ExpressionStatement) String() string { 
+    if es.Expression != nil {
+        return es.Expression.String() 
+    }
+    return "" 
+}
+```
+当我们构件好表达式，其中的空值检查我们接下来会去掉的。
+
