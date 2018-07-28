@@ -206,3 +206,323 @@ func (es *ExpressionStatement) String() string {
 ```
 当我们构件好表达式，其中的空值检查我们接下来会去掉的。
 
+现在我们为`ast.Identifier`增加`String()`方法。
+```go
+// ast/ast.go
+func (i *Identifer) String() string { return i.Value }
+```
+有了这个方法，我们可以仅仅调用`*ast.Program`的`String()`方法，就可以得到整个程序的字符串表示形式。这样可以让我们的`*ast.Program`变得可以测试，让我们以Monkey的源代码作为一个例子：
+```
+let myVar = anotherVar;
+```
+如果我们以此构建抽象语法树，我们可以对`String()`的返回值做一些如下的测试：
+```go
+package ast
+import ( 
+    "monkey/token"
+    "testing"
+)
+func TestString(t *testing.T) { 
+    program := &Program{
+    Statements: []Statement{ 
+        &LetStatement{
+            Token: token.Token{Type: token.LET, Literal: "let"}, Name: &Identifier{
+                Token: token.Token{Type: token.IDENT, Literal:"myVar"},
+                Value: "myVar", 
+            },
+            Value: &Identifier{
+            Token: token.Token{Type: token.IDENT, Literal:"anotherVar"}, 
+            Value: "anotherVar",}, 
+            }, 
+        }, 
+    }
+    if program.String() != "let myVar = anotherVar;" { 
+        t.Errorf("program.String() wrong. got=%q", program.String())
+    } 
+}
+```
+在上述测试中，我们手动构建了抽象语法树。 当为解析器编写测试的时候当然不需要这么。当然需要最解析器生成的抽象语法树需要进行测试。为了测试目的，这个测试，向我们展示通过比较解析的输出可以让我们的测试变得更加可读。这也是变得非常可用如果我们解析表达式。
+
+好消息是所有的工作都已经完成了，是时候完成`Pratt`解析器了。
+
+**实现Pratt解析器**
+
+Pratt解析器的主要思想是将解析函数和`token`类型联系在一起。无论遇到什么类型的`token`，解析函数将会被调用，并且解析出正确的表达式，并且返回抽象语法树的节点。每个`token`类型最多拥有两个相关的解析函数，这取决于该`token`是在前缀还是后缀位置发现的。
+
+首先要做的建立这些关联，我们定义了两种类型的函数：一个前缀解析函数另一个是中缀解析函数。
+```go
+// parser/parser.go
+type (
+    prefixParseFn func() ast.Expression
+    infixParseFn func(ast.Expression) ast.Expression
+)
+```
+两个函数都返回`ast.Expression`，因为它们是要解析表达式。但是只有`infixParseFn`接受一个参数：另一个表达式。这个参数是中缀操作符的左边表达式，前缀操作符没有左边部分。我知道现在还没有看出有什么意义，但是请接受我这么做，接下来你会看到它们是怎么工作的。从现在请记住，当遇到`token`类型在前缀位置上调用`prefixParseFn`，当遇到`token`类型在中缀位置上，调用`infixParseFn`方法。
+
+为了在遇到不同类型的`token`时候，我们的解析器正确地得到`prefixParseFn`或者`infixParseFn`，我们需要在`Parser`结构中添加两个字典映射：
+```go
+// parser/parser.go
+type Parser struct {
+    l *lexer.Lexer 
+    errors []string
+    curToken token.Token 
+    peekToken token.Token
+    prefixParseFns map[token.TokenType]prefixParseFn
+    infixParseFns map[token.TokenType]infixParseFn 
+}
+```
+有了映射表，我们可以通过检查表（前缀或者中缀)得到关联当前`curToken.Type`得到正确的解析函数。
+
+我们也需要增加添加这两个映射表的词条的帮助函数：
+```go
+func (p *Parser) registerPrefix(tokenType token.TokenType, fn      prefixParseFn) { 
+    p.prefixParseFns[tokenType] = fn
+}
+func (p *Parser) registerInfix(tokenType token.TokenType, fn infixParseFn) { 
+    p.infixParseFns[tokenType] = fn
+}
+```
+现在我们已经准备好去算法的核心部分：
+
+**标识符**
+
+我们现在开始可能在Monkey编程语言中最简单表达式：标识符。使用标识符的表达式语句的样子如下：
+```
+foobar;
+```
+当然`foobar`非常多元的了，在其他上下文环境中标识符也是表达式，并不仅仅是表达式语句。
+```
+add(foobar, barfoo);
+foobar + barfoo;
+if (boobar) {
+    // [....]
+}
+```
+在这里，我们将标识符作为函数额参数，作为中缀表达式的在操作树，同样也可以作为条件语句的单独表达式。它们可以被用在上述的所有的环境中，因为标识符也是表达式，就像`1+2`。就跟任何表达式一样，标识符能够生成值，它输出它们绑定的值。
+
+让我们开始以测试开始
+```go
+func TestIdentifierExpression(t *testing.T) {
+	input := "foobar;"
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+	if len(program.Statements) != 1 {
+		t.Fatalf("program has not enough statements. got=%d",
+			len(program.Statements))
+	}
+	stmt, ok := program.Statements[0].(*ast.ExpressionStatement)
+	if !ok {
+		t.Fatalf("program.Statements[0] is not ast.ExpressionStatement. got=%T",
+			program.Statements[0])
+	}
+	ident, ok := stmt.Expression.(*ast.Identifier)
+	if !ok {
+		t.Fatalf("exp not *ast.Identifier. got=%T", stmt.Expression)
+	}
+	if ident.Value != "foobar" {
+		t.Errorf("ident.Value not %s. got=%s", "foobar", ident.Value)
+	}
+	if ident.TokenLiteral() != "foobar" {
+		t.Errorf("ident.TokenLiteral not %s. got=%s", "foobar",
+			ident.TokenLiteral())
+	}
+}
+```
+它看上去有很多行代码，但是仅仅是简单的工作。我们解析输入`foobar;`，检查解析错误，然后判断`*ast.Program`节点中`Statment`数量，然后检查是不是只有一个语句，并且类型是`*ast.ExpressionStatement`。然后检查`*ast.ExpressionStatement.Expression`是否为`*ast.Identifier`。最后检查我们的标识符是否拥有正确的值`foobar`。
+
+当然，我们的解释器测试是失败的
+```
+$ go test ./parser
+--- FAIL: TestIdentifierExpression (0.00s)
+parser_test.go:110: program has not enough statements. got=0 
+FAIL
+FAIL monkey/parser 0.007s
+```
+解析器目前还不知道任何关于表达式相关知识，我们需要编写`parseExpression`方法。
+
+首先要做的是的拓展我们解析器的`parseStatement()`方法，以便于它能解析表达式语句。由于在Monkey中只有两个真正额语句`let`语句和`return`语句，如果我们没有遇到上述的语句，我们就尝试解析表达式语句:
+```go
+// parser/parser.go
+func (p *Parser) parseStatement() ast.Statement { 
+    switch p.curToken.Type {
+    case token.LET:
+        return p.parseLetStatement() 
+    case token.RETURN:
+        return p.parseReturnStatement() 
+    default:
+        return p.parseExpressionStatement() 
+    }
+}
+```
+解析表达式语句看上去是这样的：
+```go
+
+// parser/parser.go
+func (p *Parser) parseExpressionStatement() *ast.ExpressionStatement { 
+    tmt := &ast.ExpressionStatement{Token: p.curToken}
+    stmt.Expression = p.parseExpression(LOWEST)
+    if p.peekTokenIs(token.SEMICOLON) { 
+        p.nextToken()
+    }
+    return stmt 
+}
+```
+我们已经知道这么做了：构建我们的抽象语法树，然后调用其他解析函数来填充字段。在这个例子中，我们有些不同了：我们调用的`parseExpression()`方法并不存在，仅仅包含了一个常量`LOWEST`，而且它也不存在。然后我们检查备选的分号。是的，它是备选的。如果`peekToken`是`token.SEMICOLON`，我们前进`curToken`。如果不存在，同样也是无所谓的，我们不会往解析器中添加错误。那是因为我们希望表达式语句的分号是备选的。（因为在REPL中输入`5+5`更加容易一点）
+
+如果我们现在运行测试，我们可以看到一个编译错误，因为`LOWEST`是未定义的。没关系，现在我们添加它，定义Monkey编程语言中的优先级。
+```go
+// parser/parser.go
+const (
+    _ int = iota
+    LOWEST
+    EQUALS // == 
+    LESSGREATER // > or < 
+    SUM // + 
+    PRODUCT // *
+    PREFIX // -X or !X
+    CALL // myFunction(X) )
+```
+在这里我们使用`iota`给下面的每一个常量自增的值，空白标识符`_`占据着零值。剩下的常量将会被赋值为`1`到`7`，数字不重要，但是他们的循序和关系非常重要。我们需要这些常量要作什么接下来会给出答案：`*`操作符比`==`符优先级要高？
+
+在`parseExpressionStatement`中，我们将最低可能优先级传递给`parseExpression`，因为目前我们还没有解析任何东西，我们不能比较任何优先级。我保证过不了多久，我们会将其变得有意义。让我们开始编写`parseExpression`:
+```go
+// parser/parser.go
+func (p *Parser) parseExpression(precedence int) ast.Expression {       prefix := p.prefixParseFns[p.curToken.Type]
+    if prefix == nil {
+        return nil
+    }
+    leftExp := prefix()
+    return leftExp 
+}
+```
+这是初步版本，它所做的全部工作就是检查`p.curToken`在前缀位置上是否关联了一个解析函数。如果有，调用解析函数，如果没有然后`nil`。现在只能做这些因为我们还没有将`token`关联到任何函数，接下来我们要做的是：
+```go
+// parser/parser.go
+func New(l *lexer.Lexer) *Parser { 
+    // [...]
+    p.prefixParseFns = make(map[token.TokenType]prefixParseFn) p.registerPrefix(token.IDENT, p.parseIdentifier)
+// [...]
+}
+func (p *Parser) parseIdentifier() ast.Expression {
+    return &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
+}
+```
+我们修改了`New()`函数，来初始化`prefixParseFns`字典并且注册解析函数：如果我们遇到`token.IDENT`，解析函数调用`parseIdentifier`方法。
+
+`parseIdentifier`方法并没有做很多工作，它仅仅返回一个`*ast.Identifier`包含了当前`token`作为`Token`字段和`token`的明面值作为`token`的值。它没有前进`token`，也没有调用`nextToken`。这是非常重要的，我们所有的函数`prefixParseFn`和`infixParseFn`都遵循如下协议规则：开始于`curToken`，它是和你当前`token`类型关联的，然后返回你的表达式类型的最后一个`token`。千万不要前进太远。
+
+信不信由你，我们的测试通过了：
+```
+$ go test ./parser
+ok monkey/parser 0.007s
+```
+我们成功地解析了标识符表达式。好的，在开始庆祝之前，让我们长吸一口气，我们接下来将会编写更过的解析函数。
+
+**整数字面值**
+
+解析整数字面值和标识符一样简单，它看上去是这样的：
+```
+5;
+```
+是的，整数字面值也是表达式。它生成的值就是整数本身，再一次，请思考一下整数字面值可以出现哪些地方可以明白为什么它是表达式：
+```
+let x = 5;
+add(5, 10);
+5 + 5 + 5;
+```
+我们可以使用任何表达式来替换整型字面值都是合法的，比如标识符、调用表达式，分组表达式、函数字面值诸如此类。所有的表达式都可以互换的，整型字面值也是其中的一个。
+
+接下来的测试用例和之前的标识符测试用例比较类似：
+```go
+func TestIntegerLiteralExpression(t *testing.T) {
+	input := `5;`
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+	if len(program.Statements) != 1 {
+		t.Fatalf("program has not enough statements. got=%d",
+			len(program.Statements))
+	}
+	stmt, ok := program.Statements[0].(*ast.ExpressionStatement)
+	if !ok {
+		t.Fatalf("program.Statemtnets[0] is not ast.ExpressionStatement. got=%T",
+			program.Statements[0])
+	}
+	integer, ok := stmt.Expression.(*ast.IntegerLiteral)
+	if !ok {
+		t.Fatalf("exp is not *ast.IntegerLiteral. got=%T", stmt.Expression)
+	}
+	if integer.Value != 5 {
+		t.Errorf("integer.Value not %d. got=%d", 5, integer.Value)
+	}
+	if integer.TokenLiteral() != "5" {
+		t.Errorf("integer.TokenLiteral not %s. got=%s", "5", integer.TokenLiteral())
+	}
+}
+```
+正如之前标识符测试用例中的一样，我们使用简单的输入，传递个解析器。然后检查解析器没有遇到任何错误再次输出`*ast.Program.Statement`的数量。 紧接着我们做一次判断，是一个参数是否为`*ast.ExpressionStatement`，最后我们其他类型为`*ast.IntegerLiteral`。
+
+当然测试时不能通过的，因为`*ast.IntegerLiteral`还不存在，但是定义它并不难：
+```go
+// ast/ast.go
+type IntegerLiteral struct { 
+    Token token.Token
+    Value int64
+}
+func (il *IntegerLiteral) expressionNode() {}
+func (il *IntegerLiteral) TokenLiteral() string { return il.Token.Literal } 
+func (il *IntegerLiteral) String() string { return il.Token.Literal }
+```
+`*ast.IntergerLiteral`实现了`ast.Expression`接口，正如`*ast.Identifier`一样，但是有一个显著的不同是它的结构本身：`Value`字段类型是`int64`而不是`string`。 这个字段用来保存整型字面值代表的真正值。当我们在构建`*ast.IntegerLiteral`的时候，我们需要将`*ast.Integeral.Token.Literal()`的字符串转换为`int64`。
+
+调用解析函数最好的位置在关联`Token.INT`，该函数名叫`parseIntegerLiteral`：
+```go
+// parser/parser.go
+import ( 
+    // [...]
+    "strconv"
+)
+func (p *Parser) parseIntegerLiteral() ast.Expression { 
+    lit := &ast.IntegerLiteral{Token: p.curToken}
+    value, err := strconv.ParseInt(p.curToken.Literal, 0, 64) 
+    if err != nil {
+        msg := fmt.Sprintf("could not parse %q as integer", p.curToken.Literal) 
+        p.errors = append(p.errors, msg)
+        return nil
+    }
+    lit.Value = value
+    return lit 
+}
+```
+和`parseIdentifier`方法比起来相当简单了。唯一不同的是它调用`strconv.ParseInt`，该函数将一个字符串转换一个`int64`。这个值将会保存在我们将会返回的`*ast.IntegerLiteral`节点的`Value`字段中。如果转换失败，我们在解析器的错误列表中增加一个错误。
+
+但是我们的测试还是不能通过：
+```
+$ go test ./parser
+--- FAIL: TestIntegerLiteralExpression (0.00s)
+parser_test.go:162: exp not *ast.IntegerLiteral. got=<nil> FAIL
+FAIL monkey/parser 0.008s
+```
+
+在抽象语法树中，我们得到的是一个`nil`而不是`*ast.IntegerLiteral`。原因是`parseExpresion`方法不能为当前`token.INT`得到一个`parsefixParseFn`方法。 我们注册`parseIntegerLiteral`方法就能让测试通过。
+```go
+// parser/parser.go
+func New(l *lexer.Lexer) *Parser { 
+    // [...]
+    p.prefixParseFns = make(map[token.TokenType]prefixParseFn) p.registerPrefix(token.IDENT, p.parseIdentifier) p.registerPrefix(token.INT, p.parseIntegerLiteral)
+    // [...]
+}
+```
+当`parseIntegerLiteral`注册完毕，我们的解析器就知道如何处理`token.INT`了， 它会调用`parseIntegerLiteral`方法，然后返回`*ast.IntegerLiteral`。这样做的话，我们的测试通过了。
+```
+$ go test ./parser
+ok monkey/parser 0.007s
+```
+现在已经完成标识符和整数字面值解析，让我们开始继续解析前缀操作数。
+
+
+**前缀操作数**
+
