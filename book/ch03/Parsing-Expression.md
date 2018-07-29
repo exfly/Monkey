@@ -706,3 +706,214 @@ ok monkey/parser 0.007s
 
 **中缀表达式**
 
+接下来我们将要解析下面八种中缀操作符
+```
+5 + 5; 
+5 - 5; 
+5 * 5; 
+5 / 5; 
+5 > 5; 
+5 < 5;
+5 == 5; 
+5 != 5;
+```
+不要被这些`5`所打扰，正如前缀表达式一样，这里我们可以在左边和右边使用任何表达式。
+```
+<expression><infix operator><expression>
+```
+因为左右两边两个操作数，因此有时这种表达式又称为二元表达式，与此相反的叫做一元表达式。尽管我们可以在操作符的两边使用任何表达式，但是我们打算编写一些测试仅仅包含整型字面值。只要我们能够让测试通过，我们将会拓展它们至更多的操作数类型。下面是测试：
+```go
+func TestParsingInfixExpression(t *testing.T) {
+	infixTests := []struct {
+		input      string
+		leftValue  int64
+		operator   string
+		rightValue int64
+	}{
+		{"0.4+1.3", 0.4, "+", 1.3},
+		{"5+5;", 5, "+", 5},
+		{"5-5;", 5, "-", 5},
+		{"5*5;", 5, "*", 5},
+		{"5/5;", 5, "/", 5},
+		{"5>5;", 5, ">", 5},
+		{"5<5;", 5, "<", 5},
+		{"5==5;", 5, "==", 5},
+		{"5!=5;", 5, "!=", 5},
+	}
+	for _, tt := range infixTests {
+		l := lexer.New(tt.input)
+		p := New(l)
+		program := p.ParseProgram()
+		checkParserErrors(t, p)
+		if len(program.Statements) != 1 {
+			t.Fatalf("program.Statements does not contain %d statements. got=%d\n",
+				1, len(program.Statements))
+		}
+		stmt, ok := program.Statements[0].(*ast.ExpressionStatement)
+		if !ok {
+			t.Fatalf("program.Statements[0] is not ast.ExpressionStatement. got=%T",
+				program.Statements[0])
+		}
+		if !testInfixExpression(t, stmt.Expression, tt.leftValue, tt.operator, tt.rightValue) {
+			return
+		}
+	}
+}
+```
+这些测试直接从`TestParsingPrefixExpressions`拷贝过来的，除了我们现在结果的抽象语法树的节点的左边和右边都做了相等判断。在这里同样也是用表驱动测试方法，以便我们将来能够对它们进行拓展。
+
+当然测试是失败的，当然我们没有发现`*ast.InfixExpression`的定义。为了真正让测试失败，我们定义`ast.InfixExpression`:
+```go
+//ast/ast.go
+type InfixExpression struct {
+	Token    token.Token
+	Left     Expression
+	Operator string
+	Right    Expression
+}
+
+func (ie *InfixExpression) expressionNode()      {}
+func (ie *InfixExpression) TokenLiteral() string { return ie.Token.Literal }
+func (ie *InfixExpression) String() string {
+	var out bytes.Buffer
+	out.WriteString("(")
+	out.WriteString(ie.Left.String())
+	out.WriteString(" " + ie.Operator + " ")
+	out.WriteString(ie.Right.String())
+	out.WriteString(")")
+	return out.String()
+}
+```
+就跟之前`ast.PrefixExpression`，我们定义`ast.InfixExpression`，通过定义`expressionNode()`，`TokenLiteral()`和`String()`实现了`ast.Expression`和`ast.Node`接口。唯一的不同是`ast.PrefixExpression`有了新的字段`Left`，它可以保存任何表达式。
+
+通过这种方式，我们可以运行测试。现在测试返回新的错误信息：
+```
+$ go test ./parser
+--- FAIL: TestParsingInfixExpressions (0.00s)
+parser_test.go:246: parser has 1 errors
+parser_test.go:248: parser error: "no prefix parse function for + found" FAIL
+FAIL monkey/parser 0.007s
+```
+但是错误信息很清晰：它说"没有找到为加号处理的解析函数”，但是问题在于我们并不想让我们的解析器找到前缀解析函数，我们想找到中缀解析函数。
+
+到这个点上，我们将会从好奇转向惊叹，因为我们现在要完成的`parseExpression`方法。为了完成它，我们首先需要一个优先级表和一些帮助方法。
+```go
+// parser/parser.go
+var precedences = map[token.TokenType]int{
+	token.EQ:       EQUALS,
+	token.NOT_EQ:   EQUALS,
+	token.LT:       LESSGREATER,
+	token.GT:       LESSGREATER,
+	token.PLUS:     SUM,
+	token.MINUS:    SUM,
+	token.SLASH:    PRODUCT,
+	token.ASTERISK: PRODUCT,
+}
+func (p *Parser) peekPrecedence() int {
+	if p, ok := precedences[p.peekToken.Type]; ok {
+		return p
+	}
+	return LOWEST
+}
+func (p *Parser) curPrecedence() int {
+	if p, ok := precedences[p.curToken.Type]; ok {
+		return p
+	}
+	return LOWEST
+}
+```
+`precedences`是我们的优先级表：它关联Token类型到它们的优先级。优先级的值就是我们先前定义的常量，一系列自增的整数。这个表告诉我们+（`token.PLUS`）和-（`token.MINUS`）拥有相同的优先级，但是它们比`*`（`token.ASTERISK`)和`/`（`token.SLASH`）优先级低。
+
+`peekPrecedence`方法返回`p.peekToken`关联的`token`类型的优先级，如果它没有发现`p.peekToken`的优先级，则返回默认优先级`LOWEST`。最低的优先级每一个操作符都可以拥有。`curPrecedence`方法做同样的工作，只不过针对的是`p.curToken`。
+
+接下来要做的事为一个中缀解析函数注册给所有的中缀操作符：
+```go
+// parser/parser.go
+func New(l *lexer.Lexer) *Parser { 
+// [...]
+    p.infixParseFns = make(map[token.TokenType]infixParseFn) p.registerInfix(token.PLUS, p.parseInfixExpression) p.registerInfix(token.MINUS, p.parseInfixExpression) p.registerInfix(token.SLASH, p.parseInfixExpression) p.registerInfix(token.ASTERISK, p.parseInfixExpression) p.registerInfix(token.EQ, p.parseInfixExpression) p.registerInfix(token.NOT_EQ, p.parseInfixExpression) p.registerInfix(token.LT, p.parseInfixExpression) p.registerInfix(token.GT, p.parseInfixExpression)
+// [...]
+}
+```
+我们先前已经拥有了`registerInfix`方法，到现在我们最终使用它们。每一个中缀操作符关联到同一个解析函数中，叫做`parseInfixExpression`，它看上去是这样的：
+```go
+func (p *Parser) parseInfixExpression(left ast.Expression) ast.Expression {
+	expression := &ast.InfixExpression{
+		Token:    p.curToken,
+		Operator: p.curToken.Literal,
+		Left:     left,
+	}
+	precedence := p.curPrecedence()
+	p.nextToken()
+	expression.Right = p.parseExpression(precedence)
+	return expression
+}
+```
+最显著的不同在于，不同于`parsePrefixExpression`方法，在新的方法中我们接受了一个参数，`ast.Expression`类型的`left`。它用这个参数构建`ast.InfixExpression`节点中的`Left`字段，然后将当前`token`(也就是当前中缀表达式的操作符)的优先级保存至变量`precedence`中。然后调用`nextToken`方法前进token。最后调用`parseExpression`方法来获取`Right`字段，其中将`precedence`作为参数传递给方法。
+
+是时候揭开`Pratt`解析法的神秘面纱了，这是`parseExpression`函数的最后一个版本：
+```go
+func (p *Parser) parseExpression(precedence int) ast.Expression {
+	prefix := p.prefixParseFns[p.curToken.Type]
+	if prefix == nil {
+		p.noPrefixParseFnError(p.curToken.Type)
+		return nil
+	}
+	leftExp := prefix()
+	for !p.peekTokenIs(token.SEMICOLON) && precedence < p.peekPrecedence() {
+		infix := p.infixParseFns[p.peekToken.Type]
+		if infix == nil {
+			return leftExp
+		}
+		p.nextToken()
+		leftExp = infix(leftExp)
+	}
+	return leftExp
+}
+```
+Duang, 我们的测试通过了：
+```
+$ go test ./parser
+ok monkey/parser 0.006s
+```
+现在我们能够正式的解析中缀表达式了！等一下，究竟发生了？它究竟是怎么工作的？
+
+显然`parseExpression`现在能够做一些工作了，我们已经知道如何找到当前`token`关联的解析函数，然后调用它。这些我们在前缀操作符、标识符和整型字面值中也做了相关工作。
+
+新的内容在`parseExpression`函数中的中间循环部分，在中间循环体中，不停为下一个`token`寻找`infixParseFns`。如果找到这样的函数，调用它。将表达式作为参数传递给他，并将结果作为新值。不停的重复以上过程知道遇到一个更高的优先级的`token`。
+
+工作非常棒，让我们看看不同一些测试用例，有更多的操作符和不同的优先级，看看抽象语法树是否正确描述。
+```go
+func TestOperatorPrecedenceParsing(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"-a * b", "((-a) * b)"},
+		{"!-a", "(!(-a))"},
+		{"a+b+c", "((a + b) + c)"},
+		{"a+b-c", "((a + b) - c)"},
+		{"a*b*c", "((a * b) * c)"},
+		{"a*b/c", "((a * b) / c)"},
+		{"a+b/c", "(a + (b / c))"},
+		{"a+b*c+d/e-f", "(((a + (b * c)) + (d / e)) - f)"},
+		{"3+4;-5*5", "(3 + 4)((-5) * 5)"},
+		{"5>4==3<4", "((5 > 4) == (3 < 4))"},
+		{"5<4!=3>4", "((5 < 4) != (3 > 4))"},
+		{"3+4*5==3*1+4*5", "((3 + (4 * 5)) == ((3 * 1) + (4 * 5)))"},
+	}
+	for _, tt := range tests {
+		l := lexer.New(tt.input)
+		p := New(l)
+		program := p.ParseProgram()
+		checkParserErrors(t, p)
+		actual := program.String()
+		if actual != tt.expected {
+			t.Errorf("expected=%q, got=%q", tt.expected, actual)
+		}
+	}
+}
+```
+所有测试都通过了，这个相当神奇，难道不是吗？不同的`*ast.InfixExpression`正确地嵌套，这个幸亏我们在抽象语法树的节点中`String()`方法中正确使用括号。
+
+如果你正在抓耳牢骚想知道这个如何工作的，别担心。我们接下来近距离看看我们的`parseExpression`方法。
