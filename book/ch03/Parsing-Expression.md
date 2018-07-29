@@ -526,3 +526,183 @@ ok monkey/parser 0.007s
 
 **前缀操作数**
 
+在Monkey语言中有两种前缀操作符:`!`和`-`，它们的用法和其他编程语言一样：
+```
+-5;
+!foobar;
+5 + -10;
+```
+使用的方式如下：
+```
+<prefix operator><expression>
+```
+任何在前缀操作符后面的表达式都是操作数，下面这些都是有效的：
+```
+！isGreaterThanZero(2);
+5 + -add(5, 5);
+```
+这也就意味着抽象语法树中前缀操作符表达式可以指向任何表达式作为它的操作数。
+
+但是首先是测试，接下来是前缀操作符的测试用例：
+```go
+func TestParsingPrefixExpression(t *testing.T) {
+	prefixTests := []struct {
+		input        string
+		operator     string
+		integerValue int64
+	}{
+		{"!5;", "!", 5},
+		{"-15;", "-", 15},
+	}
+	for _, tt := range prefixTests {
+		l := lexer.New(tt.input)
+		p := New(l)
+		program := p.ParseProgram()
+		checkParserErrors(t, p)
+		if len(program.Statements) != 1 {
+			t.Fatalf("program.Statement doest not contain %d statements. got=%d\n",
+				1, len(program.Statements))
+		}
+		stmt, ok := program.Statements[0].(*ast.ExpressionStatement)
+		if !ok {
+			t.Fatalf("program.Statements[0] is not ast.ExpressionStatement. got=%T",
+				program.Statements[0])
+		}
+		exp, ok := stmt.Expression.(*ast.PrefixExpression)
+		if !ok {
+			t.Fatalf("stmt is not ast.PrefixExpression. got=%T", stmt.Expression)
+		}
+		if exp.Operator != tt.operator {
+			t.Fatalf("exp operator is not '%s'. got=%s",
+				tt.operator, exp.Operator)
+		}
+		if !testLiteralLiteral(t, exp.Right, tt.integerValue) {
+			return
+		}
+	}
+}
+```
+在测试函数中包含了很多代码，主要是两个原因：首先通过`t.Errorf`方法检查错误占据了大量的内容；还有一点是使用表驱动的测试方法。这个方法可以帮助我们省去好多测试代码。虽然只有两行代码，但是重复的编写测试代码意味着我们需要写很多重复的代码。因为测试背后的逻辑代码是相同的，所以我们共同使用测试。两个测试用例(!5和-15作为输入)不同点仅仅在于其期望的操作符和整数不同。
+
+在测试函数中，我们迭代切片中的输入，然后对生成的抽象语法树进行判断。正如你看到的，在最后我们使用新的帮助函数`testIntegerLiteral`来测试`*ast.PrefixExpression`的`Right`字段的值是否为正确的整数。 下面就是帮助函数，这样我们可以专注于`*ast.PrefixExpression`的测试用例，不过它的字段接下我们会用到。
+```go 
+func testIntegerLiteral(t *testing.T, il ast.Expression, value int64) bool {
+	integ, ok := il.(*ast.IntegerLiteral)
+	if !ok {
+		t.Errorf("il not *ast.IntegerLiteral. got=%T", il)
+		return false
+	}
+	if integ.Value != value {
+		t.Errorf("integ.Value not %d. got=%d", value, integ.Value)
+		return false
+	}
+	if integ.TokenLiteral() != fmt.Sprintf("%d", value) {
+		t.Errorf("integ.TokenLiteral not %d. got=%s", value,
+			integ.TokenLiteral())
+		return false
+	}
+	return true
+}
+```
+上述函数并没有新奇的地方，我们之前在`TestIntegerLiteralExpression`中已经看到了，但是通过小的帮助函数可以让我们的新测试变得更叫可读。
+
+正如我们期望的，测试还是没有通过：
+```
+$ go test ./parser
+# monkey/parser
+parser/parser_test.go:210: undefined: ast.PrefixExpression FAIL monkey/parser [build failed]
+```
+我们需要定义`ast.PrefixExpression`节点：
+```go
+//ast/ast.go
+type PrefixExpression struct {
+	Token    token.Token // the prefix token, e.g. !
+	Operator string
+	Right    Expression
+}
+
+func (pe *PrefixExpression) expressionNode()      {}
+func (pe *PrefixExpression) TokenLiteral() string { return pe.Token.Literal }
+func (pe *PrefixExpression) String() string {
+	var out bytes.Buffer
+	out.WriteString("(")
+	out.WriteString(pe.Operator)
+	out.WriteString(pe.Right.String())
+	out.WriteString(")")
+	return out.String()
+}
+```
+同样也没有什么稀奇的，`*ast.PrefixExpression`节点有两个值得注意的字段：`Operator`和`Right`。`Operator`是一个字符串，它将会是`-`或者`!`。`Right`字段将会包含操作符右边的表达式。
+
+虽然`*ast.PrefixExpression`已经定义，但是测试同样是失败，伴随这奇怪的错误信息
+```
+$ go test ./parser
+--- FAIL: TestParsingPrefixExpressions (0.00s)
+parser_test.go:198: program.Statements does not contain 1 statements. got=2 FAIL
+FAIL monkey/parser 0.007s
+```
+为什么`program.Statements`包含一个语句而不是期待的两个？原因是`parseExpression`并没有认出我们的前缀操作符，仅仅返回一个`nil`，所以`program.Statements`不包含一个语句仅仅是一个`nil`。
+
+我们可以做的更好，通过拓展我们的解析器。 `parseExpression`方法可以给出更好的错误信息：
+```go
+// parser/parser.go
+func (p *Parser) noPrefixParseFnError(t token.TokenType) {
+	msg := fmt.Sprintf("no prefix parse function for %s found", t)
+	p.errors = append(p.errors, msg)
+}
+func (p *Parser) parseExpression(precedence int) ast.Expression {
+	prefix := p.prefixParseFns[p.curToken.Type]
+	if prefix == nil {
+		p.noPrefixParseFnError(p.curToken.Type)
+		return nil
+	}
+	leftExp := prefix()
+	return leftExp
+}
+```
+小小的帮助函数`noPrefixParseFnError`仅仅是在解析器的`error`字段增加了格式化的错误信息。但是一旦我们的测试失败，我们能够得到更好的错误消息。
+```
+$ go test ./parser
+--- FAIL: TestParsingPrefixExpressions (0.00s)
+parser_test.go:227: parser has 1 errors
+parser_test.go:229: parser error: "no prefix parse function for ! found" FAIL
+FAIL monkey/parser 0.010s
+```
+现在非常清楚我们需要做什么：编写前缀表达式的解析函数并且注册到我们的解析器中。
+```go
+// parser/parser.go
+func New(l *lexer.Lexer) *Parser { 
+    // [...]
+    p.registerPrefix(token.BANG, p.parsePrefixExpression)
+    p.registerPrefix(token.MINUS, p.parsePrefixExpression)
+    // [...]
+}
+func (p *Parser) parsePrefixExpression() ast.Expression { 
+    expression := &ast.PrefixExpression{
+        Token: p.curToken,
+        Operator: p.curToken.Literal, 
+    }
+    p.nextToken()
+    expression.Right = p.parseExpression(PREFIX)
+    return expression 
+}
+```
+对于`token.BANG`和`token.MINUS`，我们注册同样的方法`prefixParseFn`:它仅仅创建了`parsePrefixExpression`，该方法构建了抽象语法树的节点，在这个例子中是`*ast.PrefixExpression`，就跟我们之前看到的解析函数。但是有一点不同的是：它的确前进了`token`的位置通过调用`p.nextToken()`方法。
+
+当`parsePrefixExpression`被调用，`p.curToken`是`token.BANG`或者`token.MINUS`其中的一个，否则它都不会被调用。为了正确解析前缀表达式比如`-5`，不止一个`token`被消费掉了。所以在使用`p.curToken`之后创建一个`*ast.PrefixExpression`节点。这个方法前进`token`然后再次调用`parseExpression`方法。这时候前缀操作符将作为参数，虽然现在还没有使用，不久我们就会看到使用这个的好处。
+
+现在，当`parseExpression`被`parsePrefixExpression`调用的时候，输入的`token`已经前进一个并且当前的`token`是位于前缀操作符的后面。在`-5`的例子中，当`parseExpression`被调用的时候，`p.curToken.Type`是`token.INT`。然后`parseExpression`检查注册的前缀解析函数，然后发现了`parseIntegerLiteral`，它构建了`*ast.IntegerLiteral`节点并且返回。 然后`parsePrefixExpression`使用刚刚返回值填充`*ast.PrefixExpression`的`Right`字段。
+
+现在我们的测试通过了：
+```
+$ go test ./parser
+ok monkey/parser 0.007s
+```
+还记得我们之前关于我们解析函数定义的协议在这里得到实践：`parsePrefixExpression`开始于`p.curToken`(前缀操作符),然后返回的时候`p.curToken`是前缀操作数的位置，它是表达式最后一个`token`。这些`token`前进了足够的位置。这些代码足够整洁，这也是递归方法的强大之处。
+
+当然，`parseExpression`方法中的`precedence`参数仍然非常困惑，因为目前它们还没有被使用。但是我们发现了一些比这还重要的内容：这个值得改变取决于调用者是否知道当前上下文环境。`parseExpressionStatements`对于优先级层次一无所知所以仅仅使用`LOWEST`。但是`parsePrefixExpression`传递个给`PREFIX`优先级给`parseExpression`函数，因为它要解析前缀表达式。
+
+现在我们知道`precedence`在`parseExpression`中如何使用，因为我们接下来要解析中缀表达式。
+
+**中缀表达式**
+
