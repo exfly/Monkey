@@ -425,3 +425,58 @@ func (p *Parser) parseIfExpression() ast.Expression {
     return expression
 }
 ```
+在这个解析函数中，我们频繁调用`expectPeek`，这不仅仅是必须的，而且是有意义的。`expectPeek`如果期望的`token`不符合预期，那么它将会增加给解析增加一个错误，如果满足期望，它将会前进一个`token`，这的确是我们需要的，在这之后就是`{`，它标志着语句块的开始。
+
+这个方法遵循我们我们的解析函数协议：`token`前进至`parseBlockStatement`开始的地方，当前`p.curToken`位于`{`处。下面是`parseBlockStatement`解析函数：
+```go
+// parser/parser.go
+func (p *Parser) parseBlockStatement() *ast.BlockStatement {
+	block := &ast.BlockStatement{Token: p.curToken}
+	block.Statements = []ast.Statement{}
+	p.nextToken()
+	for !p.curTokenIs(token.RBRACE) {
+		stmt := p.parseStatement()
+		if stmt != nil {
+			block.Statements = append(block.Statements, stmt)
+		}
+		p.nextToken()
+	}
+	return block
+}
+```
+`parseBlockStatement`调用`parseStatement`方法一直到遇到`}`，它标记着语句块的结束。它上去和我们的顶层`parseProgram`方法非常像，在哪里我们不停地调用`parseStatement`方法，知道遇到结束`token`，在`ParseProgram`中，该结束`token`是`token.EOF`。这循环的重复并没有没有错误的影响，所以我们保留它们并且注意它们的测试用例：
+```
+$ go test ./parser
+--- FAIL: TestIfElseExpression (0.00s)
+    parser_test.go:659: parser has 3 errors
+    parser_test.go:661: parser error: "no prefix parse function for ELSE found" 
+    parser_test.go:661: parser error: "no prefix parse function for { found" 
+    parser_test.go:661: parser error: "no prefix parse function for } found"
+FAIL
+FAIL monkey/parser 0.007s
+```
+`TestIfExpression`测试通过，但是`TestIfElseExpression`并没有通过。现在为了支持`if-else-condition`中的`else`分支，我们需要检查该分支是否存在，以便我们能够在`else`分支解析它们。
+```go
+// parser/parser.go
+func (p *Parser) parseIfExpression() ast.Expression {
+//[...]
+	expression.Consequence = p.parseBlockStatement()
+	if p.peekTokenIs(token.ELSE) {
+		p.nextToken()
+		if !p.expectPeek(token.LBRACE) {
+			return nil
+		}
+		expression.Alternative = p.parseBlockStatement()
+	}
+	return expression
+}
+```
+这就是全部了，这个方法允许可选的`else`分支但是没有增加错误，在我们解析`consequence-block-statement`后，我们检查是否出现`token.ELSE`，如果存在我们跳过两个`token`，第一次调用`nextToken`的原因我们已经知道`p.peekToken`是`else`，然后我们调用`expectPeek`的原因是下一个`token`是一个语句块的开始部分`{`，否则这个程序是无效的。
+
+是的，解析的过程非常容易出现错误，非常容易忘了前进`token`或者错误地调用`nextToken`方法。通过严格的协议表明每一个解析函数怎么去前进`token`很好的帮助我们。幸运的是我们用很好的测试用例来保证我们知道每一步工作是怎样的：
+```
+$ go test ./parser
+ok monkey/parser 0.007s
+```
+
+**函数字面**
