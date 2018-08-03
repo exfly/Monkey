@@ -1,16 +1,12 @@
 **用GO语言编写解析器**
 
-# 翻译计划
-由于本人在互联网公司工作，工作时间较长，翻译工作只能在有限的下班时间展开。现在邀请一起翻译，<del>目前所有章节翻译工作尚未有其他人认领<-del>，需要认领章节的，邮箱联系本人，邮件内容包含认领的小节和个人GitHub地址。
+**翻译人员**  
 
-**翻译表**  
+- [gaufung](https://github.com/gaufung)
 
-翻译人员 | 章节
----|---
-[gaufung](https://github.com/gaufung) | 1.1 - 1.3
-[Jehu Lu](https://github.com/lwhile)  | 2.1 - 2.5
-[momaek](https://github.com/momaek)  | 3.1 - 3.9
+- [Jehu Lu](https://github.com/lwhile)
   
+**目录**
 
 - [1 前言](#ch01-introduction)
     - [1.1 Monkey 编程语言和解释器](#ch01-the-monkey-programming-language-and-interpreter)
@@ -32,7 +28,7 @@
     - [3.7 Pratt解析法如何工作](#ch03-how-pratt-parsing-works)
     - [3.8 拓展解析器](#ch03-extending-the-parser)
     - [3.9 REPL](#ch03-read-parse-print-loop)
-- [4 计算](#ch04-evaluation)
+- [4 执行](#ch04-evaluation)
     - [4.1 符号赋值](#ch04-giving-meaning-to-symbols)
     - [4.2 计算策略](#ch04-strategies-of-evaluation)
     - [4.3 树遍历计算](#ch04-a-tree-walking-interpreter)
@@ -187,7 +183,7 @@ Go非常容易阅读和理解，你不需要理解这本书中编写的Go语言�
 
 另一个原因就是Go语言提供非常棒的工具，本书中我们编写的解释器关注的重点背后的想法的和概念。通过Go语言的格式化命令 `gofmt` 和内置的测试框架，我们可以专注与我们的解释器不用去关心第三方库、工具和依赖。在这本书中我们将不会使用任何其他的工具，仅仅使用Go语言提供的。
 
-但是我认为更重要的是本书提供的Go语言代码与那些更底层的代码非常类似，比如C，C++和Rust。或者这跟Go语言的本身相关，更注重简洁性,<del>its stripped-down charm and lack of programming language constructs that are absednt in other languages and hard to translate</del>。 或许这也是我为本书选择Go语言的原因。同样原因，这本书中将不会有任何元编程的相关技巧，虽然那样做何以走一些捷径，但是两周之后将没有人能够看懂。没有强大的面向对象设计和模式</del>that need pen, paper and the sentence "actually, it's pretty easy" to explain</del>。
+但是我认为更重要的是本书提供的Go语言代码与那些更底层的代码非常类似，比如C，C++和Rust。或者这跟Go语言的本身相关，更注重简洁性。或许这也是我为本书选择Go语言的原因。同样原因，这本书中将不会有任何元编程的相关技巧，虽然那样做何以走一些捷径，但是两周之后将没有人能够看懂。没有强大的面向对象设计和模式。
 
 所有的原因都是书中的代码能够让你更好的理解（概念上的和技术层面上的）和重复使用它们。如果你在读完这本书后，打算用其他语言写自己的解释器，那将会是非常容易上手的。通过这本书，我想给你提供一个理解和构造一个解释器的起点。
 
@@ -310,22 +306,3559 @@ const (
 
 接下来我们开始我们的词法解析器。
 <h2 id="ch02-the-lexer">2.3 词法分析器</h2>
-<h2 id="ch02-extending-our-token-set-and-lexer">2.4 拓展Token集和词法分析器</h2>
-<h2 id="ch02-start-of-a-repl">2.5 REPL编写</h2>
+在开始编写代码之前，让我们说明一下本小节的目标。我们将要编写自己的词法解析器，它将源代码作为输入，并且输出整个源代码的的token。我们将重新遍历整个输入，然后依次输出每个token。这不需要缓冲区来保存token，因为这里只有一个方法叫做`NextToken()`的方法，它将依次输入下一个token。
 
+这意味着我们将通过源码初始化词法分析器，然后让其不断得对源码调用 `NextToken()` 函数，一个 token 接着一个 token，一个字符接着另外一个字符。我们将会视源码为字符串，这会让整个过程变得简单。而且在生产环境中，将文件名和行号加到 token 中是有意义的，这样能更好得追踪解析过程和分析错误。所以最好使用 `io.Reader` 和文件名初始化词法分析器。但是因为这会增加我们处理的复杂度，所以我们不会在这里处理这些，我们将从简单的地方开始，只使用字符串并忽略文件名和行号。
+
+目标明确后，我们需要为词法分析器做什么已经很清晰了。我们创建一个新的包，并且添加一个可以持续运行的测试，以获得词法分析器工作状态的反馈。我们可以从最小的地方开始，然后随着词法分析器功能的完善再不断添加测试用例。
+
+
+
+```go
+// lexer/lexer_test.go
+
+package lexer 
+
+import (
+    "testing"
+    
+    "monkey/token"
+)
+
+func TestNextToken1(t *testing.T) {
+	input := `=+(){},;`
+
+	tests := []struct {
+		expectedType    token.TokenType
+		expectedLiteral string
+	}{
+		{token.ASSIGN, "="},
+		{token.PLUS, "+"},
+		{token.LPAREN, "("},
+		{token.RPAREN, ")"},
+		{token.LBRACE, "{"},
+		{token.RBRACE, "}"},
+		{token.COMMA, ","},
+		{token.SEMICOLON, ";"},
+		{token.EOF, ""},
+	}
+	l := New(input)
+	for i, tt := range tests {
+		tok := l.NextToken()
+		if tok.Type != tt.expectedType {
+			t.Fatalf("tests[%d] - tokentype wrong, expected=%q, got=%q", i, tt.expectedType, tok.Type)
+		}
+		if tok.Literal != tt.expectedLiteral {
+			t.Fatalf("tests[%d] - Literal wrong, expected=%q, got=%q", i, tt.expectedLiteral, tok.Literal)
+		}
+	}
+}
+
+```
+
+当然，测试会失败 -- 因为我们还没有添加任何代码:
+
+```shell
+$ go test ./lexer
+# monkey/lexer
+lexer/lexer_test.go: 27 undefined: New
+FAIL monkey/lexer [build failed]
+```
+
+接下来让我们以一个返回 `*Lexer` 的函数 `New()` 开始：
+
+```go
+package lexer 
+
+type Lexer struct{
+    position     int    //current character position
+	readPosition int    //next character position
+	ch           rune   //current character
+	characters   []rune //rune slice of input string
+}
+
+func New(input string) *Lexer {
+    l := &Lexer{input:input}
+    return l
+}
+```
+
+Lexer 的大多数字段都能自解释。有可能产生一些困惑的是 `position` 和 `readPosition`。它们都被用于访问 `input` 中字符的下标。例如：`l.input[l.readPosition]`。这两个指针指向我们的输入字符串的原因，是我们需要进一步查看输入并查看当前字符，以查看接下来会发生什么。readPosition 永远指向 input 中的下一个字符，而position 则指向 input 中的与 ch 字节相关联的字符。
+
+第一个辅助函数被称为 `readChar()` 可以让这几个字段更容易被理解：
+
+```go
+// lexer/lexer.go
+func (l *Lexer) readChar() {
+	if l.readPosition >= len(l.characters) {
+		l.ch = rune(0)
+	} else {
+		l.ch = l.characters[l.readPosition]
+	}
+	l.position = l.readPosition
+	l.readPosition += 1
+}
+```
+
+readChar 函数的目的在于返回下一个字符给我们，以及更新我们在 input 字符串的位置。它第一件要做的事是检查我们是否读到了 input 的末尾，无法再读取任何字符。如果是的话会将 `l.ch` 置为 0，对于我们来说，这个 ASCII 码代表了 “NUL” 字符，意味着我们还没有读取任何内容。但是如果我们还没有达到输入的结尾，那么它会通过访问将 `l.ch` 设置为下一个字符，然后将 `l.position` 更新到刚刚使用的 `l.readPosition` ，并且`l.readPosition` 增加1。通过这种方式，`l.readPosition` 永远指向我们将要读取的下一个位置，而 `l.position` 则永远指向我们读过的最后一个位置。
+
+在谈论 readChar 的时候，要说明的一点是，其只支持 ASCII 码而不是整个 Unicode 集合。为什么？因为这能够让我们保持事情的简单性，并且把精力放在解释器的要点上。为了支持 Unicode 和 UTF-8，我们需要将 `l.ch` 的类型从 byte 改为 rune, 因为它们可能包含多个字节。`l.input[l.readPosition]` 也无法再继续工作。接下来我们也将会看到，一些其他的方法和函数也需要做出一点变化。让 Monkey 完整得支持 Unicode（以及 emojis!）就做为读者的一个练习吧。
+
+接下来我们对 `New()` 函数调用 readChar，如此一来，在调用 `NextToken()`之前，我们已经初始化好了 `l.position` 和 `l.readPosition`，  `*Lexer` 进入了工作状态。
+
+```go
+func New(input string) *Lexer {
+    l := &Lexer{input:input}
+    l.readChar()
+    return l
+}
+```
+
+现在我们的测试告诉我们调用 `New(input)` 不再有任何问题，但是 `NextToken()` 方法还是没有实现。接下来让我们添加第一个版本
+
+```go
+// lexer/lexer.go
+func (l *Lexer) NextToken() token.Token {
+    // TODO: add more code here
+}
+```
+
+这是 `NextToken()` 方法的基本结构。我们查看当前检查的字符，并根据字符串返回一个 token。在返回 token 之前需要更新我们的指针在 input 中的位置，所以当我们下次再次调用 `NextToken` 的时候，`l.ch` 已经是最新的值。一个叫做 `newToken` 的小函数帮助我们初始化那些 token。
+
+运行测试，我们可以看到他们得到了通过：
+
+```shell
+$ go test ./lexer
+ok monkey/lexer 0.007s
+```
+
+棒极了！接下来我们扩展测试用例	
+
+```go
+// lexer/lexer_test.go
+func TestNextToken1(t *testing.T) {
+	input := `=+(){},;`
+
+	tests := []struct {
+		expectedType    token.TokenType
+		expectedLiteral string
+	}{
+		{token.ASSIGN, "="},
+		{token.PLUS, "+"},
+		{token.LPAREN, "("},
+		{token.RPAREN, ")"},
+		{token.LBRACE, "{"},
+		{token.RBRACE, "}"},
+		{token.COMMA, ","},
+		{token.SEMICOLON, ";"},
+		{token.EOF, ""},
+	}
+	l := New(input)
+	for i, tt := range tests {
+		tok := l.NextToken()
+		if tok.Type != tt.expectedType {
+			t.Fatalf("tests[%d] - tokentype wrong, expected=%q, got=%q", i, tt.expectedType, tok.Type)
+		}
+		if tok.Literal != tt.expectedLiteral {
+			t.Fatalf("tests[%d] - Literal wrong, expected=%q, got=%q", i, tt.expectedLiteral, tok.Literal)
+		}
+	}
+}
+```
+
+值得注意的是，在这个测试中，input 已经发生了变化。它看起来像是 Monkey 语言的一个子集。它包含了所有我们已经成功转化为 token 的符号，但是一个新的事情导致我们的测试失败了：标识符、 关键字、数字。 
+
+
+
+接下来使用标识符和关键字作为我们的开始。我们的 lexer 所需要做的就是识别当前的字符是否是一个字母，如果是，其就需要读取剩下的标识符和关键字，直到其遇到一个非标识符或者关键字，这样我们就可以使用正确 token 类型。第一步我们需要扩展我们的 switch 语句。
+
+
+
+``` go
+// lexer/lexer/go
+
+func (l *Lexer) NextToken() token.Token {
+	var tok token.Token
+
+	switch l.ch {
+	default:
+		if isLetter(l.ch) {
+            tok.Literal = l.readIdentifier()
+			return tok
+		} else {
+            tok = newToken(token.ILLEGAL, l.ch)
+		}
+	}
+	l.readChar()
+	return tok
+}
+
+func (l *Lexer) readIdentifier() string {
+	position := l.position
+	for isIdentifier(l.ch) {
+		l.readChar()
+	}
+    return l.input[position:position]
+}
+
+func isLetter(ch byte) bool {
+    return 'a' <= ch && ch <= 'z' || 'A' <= ch && ch <= 'Z' || ch == '_'
+}
+```
+
+
+
+我们为 switch 语句添加了一个默认的分支，因此，只要 `l.ch `不是识别出的字符之一，我们就可以检查标识符。我们同样可以添加类型为 `token.ILLEGAL` 的token 的生成。如果我们到此为止，我们真的不知道如何处理当前的字符并且将其声明为 `token.ILLEGAL`
+
+
+
+辅助函数`isLetter`检查所给的参数是否是一个字母。这听起来很容易，但是要注意的是， `isLetter` 的改动会对我们的解析器解析出来语言的语言产生出乎意料的影响。正如你看到的那样，在我们例子中检查了 `ch == '_'` ，这意味着我们将 `_` 视为字母，并且允许其出现在标识符和关键字中。这表明我们可以使用类似 `foo_bar`做为变量名。其他编程语言甚至允许 ! 和 ？作为标志符。如果你也想要把它们作为标识符，这里就是你实现的地方。
+
+
+
+`readIdentifier()` 的功能就像函数名所展现的那样，其读取一个标识符，并更新我们分析器的读取位置，直到遇到一个非字母的字符。
+
+
+
+在 switch 语句的默认分支中，我们使用 `readIdentifier` 为我们当前的 token 设置字段 `Literal` 。但是 `Type`  字段呢？目前我们已经读取了像 `let`，`fn` 或者 `foobar`，除了语言关键字之外，我们还需要能够告诉用户定义的标识符。我们需要一个函数，它能够为我们拥有的 token 返回正确的 `TokenType`。那么除了 token 包，还有那个地方更适合添加这样一个函数呢？
+
+
+
+```go
+// token/token.go
+
+var keywords = map[string]TokenType{
+	"fn":     FUNCTION,
+	"let":    LET
+}
+
+// LookupIdentifier used to determinate whether identifier is keyword nor not
+func LookupIdentifier(identifier string) TokenType {
+	if tok, ok := keywords[identifier]; ok {
+		return tok
+	}
+	return IDENT
+}
+
+```
+
+
+
+`LookupIdent` 检查通过关键字表检查所给的标识符是否是关键字。如果是，其返回关键字的常量 `TokenType`。如果其不是，则返回一个为所有用户自定义标识符的 `token.IDENT`。
+
+
+
+有了这个函数，我们就可以完成标识符和关键字的词法分析了：
+
+
+
+```go
+// lexer/lexer.go
+
+func (l *Lexer) NextToken() token.Token {
+    var tok token.Token
+    
+    switch l.ch {
+    // [...]
+    default:
+        if isLetter(l.ch) {
+            tok.Literal = l.readIdentifier()
+            tok.Type = token.LookupIdent(tok.Literal)
+            return tok
+        } else {
+            tok = newToken(token.ILLEGAL, l.ch)
+        }
+    }
+}
+```
+
+
+
+我们使用 `return tok` 在这里提前结束是必要的，因为当调用 `readIdentifier()` 的时候，我们会重复调用 `readChar()` 并更新我们的 `readPosition` 和 `position` 字段到当前标识符的最后一个字符。所以我们不需要在 switch 语句后再次调用 `NextToken()`
+
+
+
+接下来运行我们的测试，我们可以检查 `let` 目前是否是标识符。不过测试还是无法通过：
+
+```shell
+$ go test ./lexer
+
+--- FAIL: TestNextToken (0.000s)
+  lexer_test.go:70: tests[1] - tokentype wrong. expected="IDENT", got="ILLEGAL"
+FAIL
+FAIL monkey/lexer 0.008s
+```
+
+
+
+问题出在我们下一个我们希望得到的 token：一个为 "five" 的 `IDENT` token 。实际上我们得到的是一个 `ILLEGAL` token。为什么？原因在于 “let" 与 “five" 之间隔了空格。但是在 Monkey 里空格不重要，所以我们需要整个跳过它。
+
+
+
+```go
+// lexer/lexer.go
+func (l *Lexer) NextToken() token.Token {
+    var tok token.Token
+    l.skipWhitespace()
+    switch l.ch {
+        // [...]
+    }
+}
+
+func (l *Lexer) skipWhitespace() {
+    for l.ch == ' ' || l.ch == '\t' || l.ch == '\n' || l.ch == '\r' {
+        l.readChar()
+    }
+}
+```
+
+
+
+像这种辅助函数在很多分析器都能找到，有会被称为 `eatWhitespace`，有时则被称为 `consumeWhitespace`，或者其他完全不同的名字。哪些字符需要被跳过取决于被分析的语言。例如，有些语言在实现的时候会为换行符创建  token，如果它们不在 token 流中的正确位置，则将会抛出错误。为了让接下来的步骤简单些，我们暂时跳过对换行符的分析。
+
+
+
+使用 `skipWhitespace()` 处理 `let five = 5;`时，数字 5 将会被跳过。这是正确的，因为到目前为止，该函数还不知道将数字转化为 token。接下来是添加该功能的时候了：
+
+就像我们之前为标识符所做的一样，我们需要在 switch 语句的默认分支中添加更多的功能。
+
+
+
+```go
+// lexer/lexer.go
+func (l *Lexer) NextToken() token.Token() {
+    var tok token.Token
+    l.skipWhitespace()
+    switch l.ch {
+    default:
+        if isLetter(l.ch) {
+            tok.Literal = l.readIdentifier()
+            tok.TYpe = token.LookupIdent(tok.Literal)
+            return ok
+        } else if isDigit(l.ch) {
+            tok.Type = token.INT
+            tok.Literal = l.readNumber()
+        } else {
+            tok = newToken(token.ILLEGAL, l.ch)
+        }
+    }
+}
+
+func (l *Lexer) readNumber() string {
+    position := l.position
+    for isDigit(l.ch) {
+        l.readChar()
+    }
+    return l.input[position:l.position]
+}
+
+func isDigit(ch byte) bool {
+    return '0' <= ch && ch <= '9'
+}
+```
+
+
+
+正如你所看到的，添加的代码与读取标识符和关键字的部分密切相关。`readNumber` 函数与 `readIdentifier` 函数一样，只不过使用 `isDigit` 代替了 `isLetter` 实现相应的功能。我们可以通过将字符识别函数作为参数传递来概括它，但是为了简单起见并且容易理解，我们并不选择这么做。
+
+
+
+`isDigit` 函数和 `isLetter` 函数一样简单，它只返回传入的字节是否为 0 ~ 9 的拉丁字母。
+
+添加该函数之后，我们的测试可以通过了：
+
+```shell
+$ go test ./lexer
+ok	monkey/lexer 0.000s
+```
+
+
+
+我不知道你是否注意到，我们在 `readNumber` 函数中简化了很多东西。我们只读取了整数类型，浮点类型呢？或者是用 16 进制表示的数字？又或者是 8 进制？我们忽略了它们，并且只能说 Monkey 并不支持它们。当然，原因还在于本书的教育目标和有限的范围。
+
+
+
+是时候打开香槟做庆祝了，我们成功得将测试用例中用到的 Monkey 语言小子集成功转换为 token。
+
+
+
+有了这个胜利，我们很容易扩展词法分析器，通过它可以标记更多的 Monkey 源代码。
+<h2 id="ch02-extending-our-token-set-and-lexer">2.4 拓展Token集和词法分析器</h2>
+为了在后面编写我们的的解析器的时候的需要，我们需要拓展我们的的词法分析器以便它能够识别出Monkey语言中更多的`token`。所以在本小节中我们将增加支持的`==`, `!`,`!=`,`-`,`/`,`*`,`<`,`>`以及关键词`true`,`false`,`if`,`else`和`return`。
+
+需要新增加的`token`可以分为下面三种类别：单个字符的`token`(如`-`)，两个字符的`token`（如`==`）和关键词（如`return`）。我们已经知道如何处理单个字符和关键词`token`，所以我们首先要只是这些，然后在拓展我们词法分析器以便支持两个字符的`token`。
+
+增加支持`-`,`/`,`*`, `<`和`>`非常普通，首先要做的是修改我们`lext/lex_test.go`中的测试用例，以便包含这些字符。正如我们之前做的，本章中的的的的所有测试代码修改是通过修改`tests`表，接下来将不会再次重复声明。
+```go
+// lexer/lexer_test.go
+func TestNextToken(t *testing.T) { 
+input := `let five = 5;
+let ten = 10;
+let add = fn(x, y) { x + y;
+};
+let result = add(five, ten); !-/*5;
+5 < 10 > 5;
+`
+// [...]
+}
+```
+注意尽管输入看上像是Monkey语言的代码片段，但是一些行是没有意义上的。比如`!-/*5`,词法分析器并不会告诉我们这些代码是否有意义，这是下一个阶段所做的工作。词法分析器仅仅是将他们转换为`token`，所以我们的测试用例尽量包含所有的`token`，而且尽量包含一些错误，边界用例，换行的处理，或者多个数字的处理等等。
+
+运行测试将会得到一些未定义的错误，因为测试包含了一些未定义的`TokenTypes`。为了修正它们，我们需要在`token/token.go`中增加下面的常量
+```go
+// token/token.go
+const ( 
+// [...]
+// Operators
+    ASSIGN = "="
+    PLUS  = "+"
+    MINUS = "-"
+    BANG = "!"
+    ASTERISK = "*"
+    SLASH = "/"
+    
+    LT = "<"
+    GT = ">"
+//[...]
+)
+```
+有了新的常量，测试仍然是失败的，因为我们并没有返回期望的`TokenTypes`.
+```
+$ go test ./lexer
+--- FAIL: TestNextToken (0.00s)
+    lexer_test.go:84: tests[36] - tokentype wrong. expected="!", got="ILLEGAL" FAIL
+FAIL monkey/lexer 0.007s
+```
+为了让测试通过，需要我们拓展我们的`switch`语句中的`NextToken()`方法：
+```go
+// lexer/lexer.go
+func (l *Lexer) NextToken() token.Token { 
+// [...]
+    switch l.ch { 
+    case '=':
+        tok = newToken(token.ASSIGN, l.ch)
+    case '+': 
+        tok = newToken(token.PLUS, l.ch)
+    case '-': 
+        tok = newToken(token.MINUS, l.ch)
+    case '!': 
+        tok = newToken(token.BANG, l.ch)
+    case '/': 
+        tok = newToken(token.SLASH, l.ch)
+    case '*': 
+        tok = newToken(token.ASTERISK, l.ch)
+    case '<': 
+        tok = newToken(token.LT, l.ch)
+    case '>': 
+        tok = newToken(token.GT, l.ch)
+    case ';': 
+        tok =  newToken(token.SEMICOLON, l.ch)
+    case ',': 
+        tok = newToken(token.COMMA, l.ch)
+// [...]
+}
+```
+新增加的switch语句中的`case`条件记录了在`token/token.go`中常量的结构，简单的改变让测试通过了：
+```
+$ go test ./lexer
+ok monkey/lexer 0.007s
+```
+现在新的单个字符的`token`已经成功添加了，下一步我们增加关键词的`true`,`false`,`if`，`else`和`return`词法分析。
+
+再一次我们拓展测试以便包含这些新的关键词，在这里我们希望在`TestNextToken`中的`input`是这样的：
+```go
+// lexer/lexer_test.go
+func TestNextToken(t *testing.T) { 
+    input := `let five = 5;
+let ten = 10;
+let add = fn(x, y) { x + y;
+};
+let result = add(five, ten); !-/*5;
+5 < 10 > 5;
+if (5 < 10) { return true;
+} else {
+return false;
+}`
+// [...]
+}
+```
+这个测试甚至不能编译，为测试中期待的类型并没有定义，为了修正它，意味着我们仅仅需要增加新的。增加`LookupIdent`来查找表：
+```go
+const (
+//[...]
+	FUNCTION  = "FUNCTION"
+	LET       = "LET"
+	TRUE      = "TRUE"
+	FALSE     = "FALSE"
+	IF        = "IF"
+	ELSE      = "ELSE"
+	RETURN    = "RETURN"
+)
+
+// reversed keywords
+var keywords = map[string]TokenType{
+	"fn":     FUNCTION,
+	"let":    LET,
+	"true":   TRUE,
+	"false":  FALSE,
+	"if":     IF,
+	"else":   ELSE,
+	"return": RETURN,
+}
+```
+仅仅修稿了编译错误就能够让测试通过了：
+```
+$ go test ./lexer
+ok monkey/lexer 0.007s
+```
+现在词法分析器认出了新的关键词。
+
+在我们进入下一章节开始解析器的时候，我们仍然需要拓展我们的词法解析器，以便它能够认出由两个字符组成的`token`，我们想增加的`token`是`==`和`!=`。
+
+你可能会想：为什么我们不通过仅仅增加`switch`语句中的`case`条件来达到目的呢？因为这个当前的字符`l.ch`作为表达式与之相违背，我们不将当个字符与`==`进行比较。
+
+我们能够做的是重用现在的case分支`=`和`!`，并拓展它们。首先要做的是在测试中增加用例，看它们能否返回`=`和`==`。拓展之后的测试代码如下：
+```go
+// lexer/lexer_test.go
+func TestNextToken(t *testing.T) { 
+input := `let five = 5;
+let ten = 10;
+let add = fn(x, y) { x + y;
+};
+let result = add(five, ten); !-/*5;
+5 < 10 > 5;
+if (5 < 10) { return true;
+} else {
+return false;
+}
+10 == 10; 10 != 9; `
+// [...] 
+}
+```
+在我们进入`NextToken`方法之前，我们需要新的帮助方法`peekChar()`
+```go
+// lexer/lexer.go
+func (l *Lexer) peekChar() byte {
+    if l.readPosition >= len(l.input) {
+        return 0 
+    } else {
+        return l.input[l.readPosition] 
+    }
+}
+```
+`peekChar`和`readChar()`方法非常像，除了它不增加`l.position`和`l.readPosition`。我们仅仅是向前看一个字符而不是移动它，我们已经知道调用`readChar()`将会返回什么。大部分的词法解析器和解析器都有类似`peek`函数来向前看，它仅仅返回下一个字符。难度在于不同的源代码中要向前看多少才有意义。
+
+当`peekChar()`增加后，新的测试输入没法编译，当然因为使用了尚未定义的测试，再次修改也非常容易
+```go
+// token/token.go
+const (
+//[...]
+    EQ = "=="
+    NOT_EQ = "!="
+)
+```
+有了定义的`token.EQ`和`token.NOT_EQ`，我们的测试返回了失败的消息：
+```
+$ go test ./lexer
+--- FAIL: TestNextToken (0.00s)
+    lexer_test.go:118: tests[66] - tokentype wrong. expected="==", got="=" FAIL
+FAIL monkey/lexer 0.007s
+```
+当词法解析器遇到`==`的时候，它创建了两个`token.ASSIGN`而不是一个`token.EQ`。解决方案是我们使用新的`peekChar()`方法，在`=`和`!`分支中使用`peek`的方法。如果下一个字符`=`我们将穿件`token.EQ`或者`token.NOT_EQ`。
+```go
+//lexer/lexer.go
+func (l *Lexer) NextToken() token.Token { 
+    // [...]
+    switch l.ch { 
+    case '=':
+        if l.peekChar() == '=' { 
+            ch := l.ch
+            l.readChar()
+            tok = token.Token{Type: token.EQ, Literal: string(ch) + string(l.ch)} 
+        } else {
+            tok = newToken(token.ASSIGN, l.ch) 
+        }
+// [...]
+    case '!':
+        if l.peekChar() == '=' {
+            ch := l.ch
+            l.readChar()
+            tok = token.Token{Type: token.NOT_EQ, Literal: string(ch) + string(l.ch)}
+        } else {
+            tok = newToken(token.BANG, l.ch)
+        }
+// [...]
+}
+```
+注意到在调用`l.readChar()`之前，我们将`l.ch`保存到局部变量。这种方法不会丢掉挡墙的字符而且很安全的前进词法分析器，词法分析器也更新的`l.position`和`l.readPosition`。如果我们要支持更多的两个字符的`token`，我们需要抽象出方法`makeTwoCharToken`来进行分析，因为两个分支非常像。既然在在这里只有`==`和`!=`两字符`token`，让我们就丢在这里，看看能够正确工作：
+```
+$ go test ./lexer
+ok monkey/lexer 0.006s
+```
+是的，测试通过了。现在词法分析器能够生成拓展后的`token`集，我们要开始准备编写解析器了。但是在做之前，我们还有一件事要做。
+<h2 id="ch02-start-of-a-repl">2.5 REPL编写</h2>
+Monkey语言需要`REPL`，它是`Read Eval Print Loop`的简写，你可能知道在解释型语言中都存在。Python有`REPL`, Ruby也有`REPL`, 每一个JavaScript运行时也有`REPL`，大部分`Lisp`也拥有一个。有时`REPL`也称作控制台，有时也叫做交互模式。概念都是一样的，`REPL`读入输入，把它发送到解释器中执行，打印结果和输出。如此循环往复：Read, Eval, Print, Loop。
+
+目前我们还不知道`Eval`Monkey中的代码，我们只知道`Eval`下面的一个过程：我们能够将Monkey源代码转换为`token`。但是我们知道如何去读和输出一些东西，我还认为循环不是个大问题。
+
+下面是一个`REPL`,它能够将Monkey源码转换为`token`，并且打印出来。我们将会拓展它来增加执行的部分：
+```go
+// repl/repl.go
+package repl
+import ( 
+    "bufio"
+    "fmt"
+    "io" 
+    "monkey/lexer" 
+    "monkey/token"
+)
+const PROMPT = ">> "
+func Start(in io.Reader, out io.Writer) { 
+    scanner := bufio.NewScanner(in)
+    for {
+        fmt.Printf(PROMPT) 
+        scanned := scanner.Scan() 
+        if !scanned {
+            return
+        }
+        line := scanner.Text() 
+        l := lexer.New(line)
+        for tok := l.NextToken(); tok.Type != token.EOF; tok = l.NextToken() { 
+            fmt.Printf("%+v\n", tok)
+        } 
+    }
+}
+```
+代码相当直接了：从输入源读取知道遇到新的一行，将得到的新的一行传递到词法解析器中，最终输出所有的`token`知道遇到`EOF`。
+
+在`main.go`文件中，我们添加一些使用`REPL`的欢迎用语。
+```go
+// main.go
+package main
+import ( 
+    "fmt"
+    "os" 
+    "os/user" 
+    "monkey/repl"
+)
+func main() {
+    user, err := user.Current() 
+    if err != nil {
+        panic(err) 
+    }
+    fmt.Printf("Hello %s! This is the Monkey programming language!\n", user.Username)
+    fmt.Printf("Feel free to type in commands\n")
+    repl.Start(os.Stdin, os.Stdout)
+}
+```
+现在我们一个使用交互模式生成`token`
+```
+$ go run main.go
+Hello mrnugget! This is the Monkey programming language! Feel free to type in commands
+>> let add = fn(x, y) { x + y; };
+{Type:let Literal:let}
+{Type:IDENT Literal:add}
+{Type:= Literal:=}
+{Type:fn Literal:fn}
+{Type:( Literal:(}
+{Type:IDENT Literal:x}
+{Type:, Literal:,}
+{Type:IDENT Literal:y}
+{Type:) Literal:)}
+{Type:{ Literal:{}
+{Type:IDENT Literal:x}
+{Type:+ Literal:+}
+{Type:IDENT Literal:y}
+{Type:; Literal:;}
+{Type:} Literal:}}
+{Type:; Literal:;}
+>>
+```
+完美，现在开始解析这些`token`。
 <h1 id="ch03-parsing">3 语法解析</h1>
 <h2 id="ch03-parsers">3.1 语法解析器</h2>
+每一个写过代码的人都听说过解析器，其中大部分都是`parser error`，或许也听说的比如这样“我们需要解析它”，“在它解析后“，”这个解析器搞砸了输入“。”解析器“这个词和”编译器“，
+"解释器”和“编程语言”一样普通。每个人都知道解析器存在，但是它们理解是正确的吗？原因是还有谁应该对`parser error`负责。
+
+但是什么才是真正的解析器？它的作用是什么，它应该要做些什么？下面是维基百科的[定义](https://en.wikipedia.org/wiki/Parsing#Parser):
+> 解析器是软件的组成部分，它输入数据（通常为文本）并且构建数据结构，往往是一种解析树，抽象语法树或者其他继承体系结构。它们给出了输入的结构，在过程中也检查的其中语法错误。解析器的的先前步骤通常是词法分析器，它从输如的字符串序列生成token。
+
+从维基百科中计算机科学主题的摘录的文章非常容易理解，我们甚至认出了我们词法解析器。
+
+一个解析器将一个输入转变为一个数据结构，它代表了输入。它听上去相当抽象，所以让我用几个例子来举例说明，下面一个`JavaScript`代码：
+```js
+> var input = '{"name": "Thorsten", "age":28}'
+> var output = JSON.parse(input)
+> output
+{name: 'Thorsen', age: 28}
+> output.name
+'Thorsen'
+> output.age
+28
+```
+我们的输入时一些文本、字符串。我们将他们传递给隐藏在`JSON.parse`函数中的解析器然后得到输出值，输出内容代表了输入：一个JavaScript对象，包含了两个字段`name`和`age`,他们的值对应着输入。现在我们可以很轻松的使用这个数据结构访问`name`和`age`字段。
+
+但是你可能会说：”一个JSON解析器和一个编程语言的解析器是不一样的”。我想会说的是，他们是不相同的，至少不同的概念层面上的。一个JSON解析器输入文本然后构建一个数据结构来表示输入，这也是编程语言的解析器的所做的工作。不同点在于JSON解析器你可以根据输入看到数据结构，然后当你看看在这个
+```js
+if ((5+2*3)==91) { return computerStuff(input1, input2); }
+```
+这个数据结构当然不能一下子看出来，这也是为什么，至少对于我来讲，它的不同点在于概念层面上更深。我猜测这概念层面上的不同主要在于缺乏对于编程语言解析器的熟悉程度和它生成的数据结构。相对于编写编程语言，我有更多的很多写JSON的经验，通过解析器解析它，查看它的输出和结构。作为编程语言的使用者，我们很少看到和接触过解析后的源代码，以及中间的表示形式。Lisp程序员是这个规则的例外，在Lisp代码中，表示源码的数据结构和Lisp用户是同样的。解析后的源代码和和程序的数据是一样的。"代码就是数据，数据就是代码”这句话你有时会从Lisp程序员嘴中说出。
+
+所以为了让我们对编程语言解析器的概念层面的理解提升到我们对一些序列化语言（比如JSON，YAML, TOML, INI等等），我们需要理解他们生成的数据结构。
+
+在大多数解析器和编译器中，源代码中的中间表示形式的数据结构叫做语法树或者抽象语法树。“抽象”的概念基于这样一个事实，在抽象语法树中代码的详细细节我们忽略掉了。分号、换行、空白、注释、花括号、中括号和括号这些都是依赖于语言，解析器并不会在抽象语法树中表示它们，它们仅仅指导如何去构建这颗树。
+
+一个事实需要主要的是，没有一个唯一正确的、通用的抽象语法树适用于每一个解析器。它们实现都是比较类似、概念上是一样的，但是细节上有所不同。具体的实现取决于它要解析的编程语言。
+
+一个小例子可以说清楚，加入说我们有如下的源代码：
+```js
+if ( 3 * 5 > 10) {
+    return "hello";
+}else{
+    return "goodbye";
+}
+```
+假设我们使用`JavaScript`，拥有一个`MagicLexer`解析器，它能构建出一个用JavaSrcipt对象构成的抽象语法树，那么解析过程中将会生成如下的内容:
+```js
+> var input = `if (3 * 5 > 10) { return "hello";} else { reutrn "goodby" ;}`
+> var tokens = MagicLexer.parse(input)
+> MagicLexer.parser(tokens);
+{
+    type: "if-statement",
+    condition :{
+        type: "operator-expression",
+        operator : ">",
+        left: {
+            type: "operator-exression",
+            operator: "*",
+            left: {
+                type: "integer-literal", value : 3
+            },
+            right :{
+                type: "integer-literal", value: 5
+            }
+        },
+        right:{
+            type:"integer-literal", value: 10
+        }
+    },
+    consequence: {
+        type: "return-statement",
+        returnValue: {type: "string-literal", value: "hello"}
+    },
+    alternative:{
+        type: "return-statement",
+        returnValue: {type: "string-literal", value: "goodbye"}
+    }
+}
+```
+正如你看到的，解析器输出的抽象语法树，相当抽象。在这里没有括号，没有冒号和花括号。但是它很精确的表示出了源代码，你认为呢？我打赌你当你看源代码的时候就能看到抽象语法树了。
+
+所以这就是解析器所做的工作。它将源代码作为输入（文本和token都可以）然后输出数据结构，它代表了源代码。当构建数据结构的时候，它们不可避免地分析了输入，检查它们是否满足期待数据结构，因此解析的过程也被称为语法分析。
+
+在本章中，我们将为我们的Monkey编程语言编写解析器。它的输入将会我们前面章节定义好的`token`,它们是有词法分析器完成，我们将会定义我们自己的抽象语法树，它将适应我们的解析器，然后构建一个抽象语法树的实例通过递归解析`token`。
 <h2 id="ch03-why-not-a-parser-generator">3.2 为何不采用语法生成器</h2>
-<h2 id="h04-writing-a-parser-for-the-monkey-programming-language">3.3 为Monkey编程语言编写语法解析器</h2>
+
+或许你已经听说过解析器生成器，就像很多工具比如`yacc`, `bison`或者`ANTLR`。解析器生成器通过读取语言的一种描述形式，将解析器输出的工具。输出的代码可以被编译或者解释，然后读取源代码就能生成语法树。
+
+有很多种解析器生成器，主要不同在于输入的形式不同和输出的语言。他们大部分使用上下文无关文法（*context-free grammer*，CFG）作为输入，CFG是一系列规则，它们描述了如何构建正确的语句，最常见的CFG的形式是`Backus-Nau Form(BNF)`或者`Extend Backus-Nau Form(EBNF)`。
+```bnf
+PrimaryExpression ::= "this"
+                    | ObjectLiteral
+                    | ("(" Exression ")")
+                    | Identifier
+                    | ArrayLiteral
+                    | Literal
+Literal ::=( <DECIMAL_LITERAL>
+        | <HEX_INTEGER_LITERAL>
+        | <STRING_LITERAL>
+        | <BOOLEAN_LITERAL>
+        | <NULL_LITERAL>
+        | <REGULAR_EXPRESSION_LITERAL> )
+Identifier ::= <IDENTIFIER_NAME> 
+ArrayLiteral ::= "[" ( ( Elision )? "]"
+            | ElementList Elision "]"
+            | ( ElementList )? "]" ) 
+ElementList ::= ( Elision )? AssignmentExpression 
+                ( Elision AssignmentExpression )*
+Elision ::= ( "," )+
+ObjectLiteral ::= "{" ( PropertyNameAndValueList )? "}"
+PropertyNameAndValueList ::= PropertyNameAndValue ( "," PropertyNameAndValue
+                        | "," )* 
+PropertyNameAndValue ::= PropertyName ":" AssignmentExpression
+PropertyName ::= Identifier
+                | <STRING_LITERAL>
+                | <DECIMAL_LITERAL>
+```
+这是`EcmaScirpt`语法使用BNF的[全部描述](http://tomcopeland.blogs.com/EcmaScript.html)。 一个解析器生成器将这些类似的东西转变为C代码。
+
+获取你也听说过你应该使用解析器生成器而不是自己手动写。可以跳过本章节，为题已经解决了。这样做的原因是解析器已经自动帮你做好了。解析过程是计算机科学最容易理解的的分支，很多聪明的人在上面投资了大量的时间，它们的成果有CFG，BNF，EBNF，解析器生成器和一些先进的解析技巧，那你为什么不充分利用这些成果呢？
+
+但是我认为学习编写自己的解析不是浪费时间，我事实上认为价值巨大。只有自己写过自己的解析器，至少尝试过，你才会看到这些解析器生成器提供的便利，它们拥有的缺陷以及它们解决的问题。 对我来讲，当我饿写完自己第一个解析器， 解析器生成器的概念就像鼠标单击一样。只有你真正理解它是怎么工作的的，才知道它们如何转换代码的。
+
+但多数人建议使用解析器生成器的人，当然们开始一个解析器或者编译器的时候这样做的原因是他们之前编写过解析器。它们已经见识过问题和可行的解决的解决方案，它们决定使用现成的工具，它们是正确的，当你希望在生产环境中使用解析器因为正确性和健壮性是首要考虑的目标。当然你不应该尝试些一个解析器，尤其当你从未编写过。
+
+但是我们在这我们将要学习去编写，我们想要知道解析器如何工作的。我的观点是当我们做一些事的最好的方法是动手去做，自己去编写一个解析器是相当有趣的。
+<h2 id="ch04-writing-a-parser-for-the-monkey-programming-language">3.3 为Monkey编程语言编写语法解析器</h2>
+当解析编程语言的时候有两种策略：至顶向下解析和至底向上解析。每一个不同的策略都有微小的不同。比如：递归下降解析，提前解析或者预测解析都是至顶向下解析的变种。
+
+在这里我们将要编写的是递归下降解析，更确切的说是一种“至顶向下操作符优先级”解析器。有时候也叫做`Pratt`解析器，根据发明人`Vaughan Pratt`命名。
+
+我将不会涉及到不同解析策略的细节中去，因为这样既占用空间而且我也不能足够精确的描述它们。让我来讲，至顶向下解析和至底向上解析的不同点在于，前者从抽象语法树的根节点开始，而后者是恰恰相反。递归下降解析器至顶向下解析， 它经常被推荐给新手，因为它和我们想象中构建抽象语法树构建是一样的。我个人发现递归方法开始于根节点非常棒，尽管它需要在理解概念之前编写代码。这也是我为什么开始编写代码，而不是探索解析策略。
+
+现在我们自己编写解析器，我们不得不做出一些取舍。我们的解析器将不会永远都很快。我们也没有正式的证明解析器的正确性。而且错误恢复和语法错误提示将不会提供。最后一点要澄清的是弄清楚解析器是非常困难的，如果没有额外的学习相关理论知识。但是我们将会拥有一个完全能够工作的解析器，并且开放了拓展和提高的部分，如果你对此非常感兴趣，你将会拥有了一个很好的理解。
+
+我们将会从解析语言开始：`let`和`return`语言。当我们能够解析语句和基本的基本的结构，我们将会转向表达式并且学习如何解析它们（这是也是`Vaughan Pratt`将会发挥作用）。最后我们将拓展解析器，使它能够解析Monkey语言的更大的子集。最后我们将构建一颗抽象语法树。
 <h2 id="ch03-parsing-let-statement">3.4 解析Let语言</h2>
+在Monkey语言中，变量绑定语句的形式如下：
+```
+let x = 5;
+let y = 10;
+let foobar = add(5, 5);
+let barfoo = 5 * 5 / 10 + 18 - add(5, 5) + multiply(124);
+let anotherName = barfoo;
+```
+上面这些语句叫做`let`语句，将一个值绑定到一个变量上，`let x = 5`语句将值`5`绑定到变量名`x`上，本小节的我们的工作是正确地解析`let`语句。从现在开始我们将跳过解析表达式过程，它是通过给定的变量获得相应的值得过程。在我们知道如何解析表达式之后再来关注这些。
+
+什么叫做正确的解析`let`语句？它意味着解析能够正确的得到一颗抽象语法树，它能够正确地表示原先`let`语句的全部信息。听上去很有可行，但是我们还没有任何抽象语法树，或者说我们还不知道着东西看上去怎么样？所以我们首先的任务是近距离看看Monkey语言，看看它结构如何。我们可以定义抽象语法树的必要部分，以便它能正确地表示`let`语句。
+
+下面都是Monkey中合法的语句
+```
+let x = 10;
+let y = 15;
+let add = fn(a, b) {
+    return a + b;
+}
+```
+Monkey中都是一系列语句，在上面的例子中有三个语句，三个变量绑定。`let`语句有如下的形式：
+```
+let <identifier> = <expression>;
+```
+一个`let`语句有两个可变的部分组成：一个标识符和一个表达式。在上面例子中，`x`，`y`和`add`都是标识符，`10`,`5`和函数都是表达式。
+
+在我们继续之前，还要进一步说明一下语句和表达式之间的不同是有必要的。表达式能够生成值，然后语句则不会。 `let x =5;`并不生成值，然而`5`能够（它生成5）。`return 5`是语句不会生成值，但是`add(5,5)`却能够生成值。区别就是在于:
+表达式生成值，而语句则不会。当然也会做一些改变，这些取决于谁在问你，但是这样已经很好。
+
+语句和表达式的正确的区分：是否生成值，取决于编程语言。在一些编程语言中函数`fn(x,y) {return x+y;}`是表达式，它可以被用在任何表达式可以使用的地方。在其他的编程语言中，字面函数只能作为编程语言函数声明的一部分。一些编程语言拥有`if`表达式，它的条件语句是表达式并且能够生成值。这些都取决于编程语言设计者怎么考虑的。正如你看到的，在Monkey语言中，大部分是表达式，包含字面函数。
+
+回到我们的抽象语法树，看着上述的例子，我们知道我们需要定义两种不同类型的节点：表达式和语句，让我们看看抽象语法树如何开始：
+
+```go
+// ast/ast.go
+package ast
+type Node interface {
+    TokenLiteral() string
+}
+type Statement interface {
+    Node
+    statementNode()
+}
+type Expression interface {
+    Node
+    expressionNode()
+}
+```
+在这里我们定义了三个接口，分别为`Node`,`Statement`和`Expression`。我们抽象语法树中每一个节点必须实现`Node`接口，也就意味着它必须要提供`TokenLiteral`方法，它返回该节点关联的`token`的字面值。`TokenLiteral`将会被用在调试和测试中。抽象语法树将全部由`Node`构成，它们互相连接在一，毕竟这是一棵树。其中的一些节点实现了`Statement`接口，另外一些实现了`Expression`接口。这些接口各自包含了哑方法`statementNode`和`expressionNode`。它们不是严格要求的，但是它们能够帮助我们指导我们的Go编译器能够抛出可能的异常，当我们在应该使用`Expression`地方使用了`Statement`，相反也同理。
+
+接下来就是我们`Node`的第一个实现
+
+```go
+//ast/ast.go
+type Program struct {
+    Statements []Statement
+}
+func (p *Program) TokenLiteral() string {
+    if len(p.Statements) > 0 {
+        return p.Statement[0].TokenLiteral()
+    }else{
+        return ""
+    }
+}
+```
+`Program`节点是每一个抽象语法树的根节点，每一个合法的Monkey程序都是一系列语句，这些语句被保存在`Program.Statement`中，它是一系列实现`Statement`接口的节点组成。
+
+有了这些AST基础模块定义，让我们想想什么样的节点能够表示`let x = 5;`，会有那些字段？定义一个变量的名称，同样我们也需要一个字段来表示等号右边的表达式，它可以指向任何表达式。它不只是指向字面值（在这个例子中是5），因为任何等号右边表达式都是相同的，比如：`let x = 5 * 5;`和`let y = add(2, 2) * 5 / 10;` 都是有效的。为了跟踪记录抽象语法树中的每一个节点，我们需要实现`TokenLiteral()`方法。它有三个字段构成：一个是标识符，一个是可以生成值的表达式，最后是token。
+
+```go
+// ast/ast.go
+import "monkey/token"
+// [...]
+type LetStatement struct {
+    Token token.Token
+    Name *Identifier
+    Value Expression
+}
+func (ls *LetStatement) statementNode() {}
+func (ls *LetStatement) TokenLiteral() string { return ls.Token.Literal}
+
+type Identifier struct {
+    Token token.Token // the token.IDENT token
+    Value string
+}
+func (i *Identifier) expressionNode() {}
+func (i *Identifier) TokenLiteral() string { return i.Token.Literal }
+```
+`LetStatement`拥有以下字段：`Name`用来保存绑定的标识符；`Value`用来保存表达式生成的值。`statementNode`和`TokenLiteral`方法用来满足`Statement`和`Node`接口。
+
+为了保存标识符绑定值，`let x= 5;`中的`x`。我们需要定义`Identifier`结构，它实现了`Expression`接口，但是在let语句中它不生成值，为什么我们定义一个`Expression`接口，主要是简化问题。标识符在Monkey语言其他部分中会生成值，比如`let x = valueProducingIdentifier;`中，为了让数据类型数量变少，我们将使用`Identifier`来表示被绑定的值，以便后来重用它们，所以标识符实现了expression接口。
+
+`Program`，`LetStatement`和`Identifier`构成了Monkey语言的源代码一部分：
+```go
+let x = 5;
+```
+它可以用抽象语法树表示如下：
+![](../figures/ast1.png)
+现在我们知道它应该长什么样，下一个任务就是构建一棵抽象语法树，首先我们的解析器是这样的：
+
+```go
+//parser/parser.go
+package parser
+import (
+    "monkey/ast"
+    "monkey/lexer"
+    "monkey/token"
+)
+type Parser struct {
+    l *lexer.Lexer
+    curToken token.Token
+    peekToken token.Token
+}
+func New(l *lexer.Lexer) *Parser {
+    p := &Parser{l: l}
+    //Read two tokens, so curToken and peekToken are both set
+    p.nextToken()
+    p.nextToken()
+    return p
+}
+func (p *Parser) nextToken(){
+    p.curToken = p.peekToken
+    p.peekToken= p.l.NextToken()
+}
+func (p *Parser) ParserProgram() *ast.Program{
+    return nil
+}
+```
+`Parser`拥有三个字段，分别为`l`，`curToken`和`peekToken`。其中`l`指向词法分析器的一个实例，通过它可以不听的调用`NextToken`方法来获取输入的下一个`token`。`curToken`和`peekToken`就像我们词法解析器拥有的两个指针`position`和`peekPosition`，但是它不是指向输入的字符，而是指向当前的`token`和下一个`token`，它们是同样重要的：我们需要查看当前输入的`token`，通过检查当前的`token`，来确定下一步需要做什么；同样也需要`peekToken`如果`curToken`不能做出相应的决定。比如考虑但单行语句`5;`，当前的`curToken`是`token.INT`，我们需要`peekToken`来决定我们是否在一行代码的末尾还是仅仅是算术表达式的开始。
+
+`New`函数非常明了，`nextToken`是一个小的帮助方法，它用来同时前进`curToken`和`peekToken`指针。现在目前`ParseProgram`是空的。
+
+在我们编写测试和填充`ParseProgram`方法之前，我先向你展示一下递归下降分析背后的基础思想和结构。它可以帮助我们很好的理解后面的分析器。接下来主要部分是解析器的伪代码。仔细阅读它并且尝试去理解`parseProgram`函数里发生了什么。
+```js
+function parseProgram() { 
+    program = newProgramASTNode()
+    advanceTokens()
+    for (currentToken() != EOF_TOKEN) {
+        statement = null
+        if (currentToken() == LET_TOKEN) { 
+            statement = parseLetStatement()
+        } else if (currentToken() == RETURN_TOKEN) { 
+            statement = parseReturnStatement()
+        } else if (currentToken() == IF_TOKEN) { 
+            statement = parseIfStatement()
+        }
+        if (statement != null) { 
+            program.Statements.push(statement)
+        }
+        advanceTokens() 
+    }
+    return program
+}
+function parseLetStatement() { 
+    advanceTokens()
+    identifier = parseIdentifier()
+    advanceTokens()
+    if currentToken() != EQUAL_TOKEN { 
+        parseError("no equal sign!") 
+        return null
+    }
+    advanceTokens()
+    value = parseExpression()
+    variableStatement = newVariableStatementASTNode() 
+    variableStatement.identifier = identifier 
+    variableStatement.value = value
+    return variableStatement
+function parseIdentifier() { 
+    identifier = newIdentifierASTNode() 
+    identifier.token = currentToken() 
+    return identifier
+}
+function parseExpression() {
+    if (currentToken() == INTEGER_TOKEN) {
+        if (nextToken() == PLUS_TOKEN) { 
+            return parseOperatorExpression()
+        } else if (nextToken() == SEMICOLON_TOKEN) { 
+            return parseIntegerLiteral()
+        }
+    } else if (currentToken() == LEFT_PAREN) {
+        return parseGroupedExpression() 
+    }
+        // [...]
+}
+function parseOperatorExpression() {
+    operatorExpression = newOperatorExpression()
+    operatorExpression.left = parseIntegerLiteral() 
+    operatorExpression.operator = currentToken() 
+    operatorExpression.right = parseExpression()
+    return operatorExpression() 
+}
+// [...]
+```
+虽然上面的伪代码中有很多省略，但是递归下降解析的基础思想是有的。入口是`parseProgram`函数，它构造了抽象语法树的根节点，然后通过调用其他函数构建孩子节点，语句。这些抽象语法树是基于当前`token`，其他函数也是相互调用，递归执行。
+
+最递归调用的部分在`parseExpression`中，但是我们已经知道为了解析表达式`5 + 5`，我们需要首先解析`5 +`然后再一次调用`parserExpression()`来解析剩下来的部分，因为在`+`后面可能是其他操作符表达式，比如`5+5*10`。我们将会接下来仔细查看解析该表达式的细节，因为他是解析中最复杂的部分同样也是最漂亮的部分，也就是`Pratt`解析。
+
+但是到现在，我们已经知道解析器将要做什么。它不停地读取`tokens`然后检查当前`token`来决定接下来需要做什么：是调用其他的解析函数呢还是抛出一个异常。每一个函数都有各自的任务，可能创建抽象语法树的节点。所以在`parseProgram()`中的主循环可以不停前进`token`来决定接下来做什么。
+
+如果你看了上述的伪代码，你可能会想：这看上去很容易理解嘛！我有一个很好的消息告诉你，我们`ParseProgram`方法和解析器看上去很类似，让我们开始工作吧！
+
+再一次，在我们编写`parseProgram`方法，我们可以编写测试。下面的测试可以确保`let`语句解析正确。
+
+```go
+// parser/parser_test.go
+package parser
+
+import (
+	"fmt"
+	"monkey/ast"
+	"monkey/lexer"
+	"testing"
+)
+
+func TestLetStatements(t *testing.T) {
+	tests := []struct {
+		input              string
+		expectedIdentifier string
+		expectedValue      interface{}
+	}{
+		{"let x =5;", "x", 5},
+		{"let z =1.3;", "z", 1.3},
+		{"let y = true;", "y", true},
+		{"let foobar=y;", "foobar", "y"},
+	}
+	for _, tt := range tests {
+		l := lexer.New(tt.input)
+		p := New(l)
+		program := p.ParseProgram()
+		checkParserErrors(t, p)
+		if len(program.Statements) != 1 {
+			t.Fatalf("program.Statements does not contain 1 statements. got=%d",
+				len(program.Statements))
+		}
+		stmt := program.Statements[0]
+		if !testLetStatement(t, stmt, tt.expectedIdentifier) {
+			return
+		}
+		val := stmt.(*ast.LetStatement).Value
+		if !testLiteralExpression(t, val, tt.expectedValue) {
+			return
+		}
+	}
+}
+
+func testLetStatement(t *testing.T, s ast.Statement, name string) bool {
+	if s.TokenLiteral() != "let" {
+		t.Errorf("s.TokenLiteral not 'let'. got %q", s.TokenLiteral())
+		return false
+	}
+	letStmt, ok := s.(*ast.LetStatement)
+	if !ok {
+		t.Errorf("s not *ast.LetStatement. got=%T", s)
+		return false
+	}
+	if letStmt.Name.Value != name {
+		t.Errorf("s.Name not '%s'. got=%s", name, letStmt.Name.Value)
+		return false
+	}
+	if letStmt.Name.TokenLiteral() != name {
+		t.Errorf("s.Name not '%s'. got=%s", name, letStmt.Name.Value)
+		return false
+	}
+	return true
+}
+```
+测试用例遵循我们先前词法解析器的测试规则，也是和其他每一个单元测试同样：我们提供Monkey代码作为输入，然后设置我们想要的抽象语法树的期待值，抽象语法树是由有解析器生成的。我们将会尽可能的检查抽象语法树的节点，确保我们没有丢失任何东西。
+
+我将不选择`Mock`或者`Stub`方法而是提供源代码作为输入而不是tokens，因为那样做的话将会让我们的测试可读和可理解。当然我们的词法解析器中的bug将会使我们的测试变得面目全非并且生成很多噪声。但是我尽量将这个风险降到最低，尤其是当比较实用源代码作为输入的时候的优势的的时候。
+
+在这里测试用例两个需要特别注意，第一个是我们忽略了`*ast.LetStatement`中的`Value`字段，为什么我们不去检查我们数字解析得是否正确呢？答案是我们是要做的，但是我们需要首先确保在解析`let`语句正确执行，所以忽略了`Value`字段。
+
+第二个是帮助函数`testLetStatement`，它看上去使用单独函数像是过度设计化，但是我们在将来很需要这个函数，它能够将我们的测试用例变得可读而不是一行行的类型转换。
+
+除此之外，在本章中我们将不会再次看全部的解析器测试，因为他们太长了，但是本书提供的代码包含全部代码。
+
+在开始之前，测试时失败的：
+```
+$ go test ./parser
+--- FAIL: TestLetStatement (0.00s)
+parser_test.go:20: ParseProgram() return nil
+FAIL
+FAIL monkey/parser 0.007s
+```
+是时候开始填充我们的`ParseProgram()`方法了：
+```go
+// parser/parser.go
+func (p *Parser) ParseProgram() *ast.Program{
+    program := &ast.Program{}
+    program.Statements = []ast.Statement{}
+    for p.curToken.Type != token.EOF {
+        stmt := p.parseStatement()
+        if stmt != nil {
+            program.Statements = append(program.Statements, stmt)
+        }
+        p.nextToken()
+    }
+    return program
+}
+```
+是不是看上去和`parseProgram()`伪代码函数非常相像？是的，我之前告诉你着很像。
+
+`parseProgram()`首先要做的事构建抽象语法树的根节点：`*ast.Program`，然后他迭代每一个`token`直至遇到`token.EOF`。它重复调用`nextToken`方法，该方法能够同时前进`p.curToken`和`p.peekToken`两个指针，每一次迭代调用`parseStatement`方法，它负责解析语句。如果它返回值不是`nil`而是`ast.Statement`，那么返回值将会添加到根节点的`Statements`切片中，如果没有任何`token`可供解析，那么`*ast.Program`将会被返回。
+
+那么`pasreStatement`方法看上去是这样的：
+```go
+// parser/parser.go
+func (p *Parser) parseStatement() *ast.Statement{
+    switch p.curToken.Type{
+    case token.LET:
+        return p.parseLetStatement()
+    default:
+        return nil
+    }
+}
+```
+不用担心，`switch`语句将会得到更多的分支，但是现在，它仅仅地调用`parseLetStatement`方法如果只遇到`token.LET`。`parseLetStatement`方法将会让我们的测试通过：
+```go
+//parser/parser.go
+func (p *Parser) parseLetStatement() *ast.LetStatement {
+    stmt := &ast.LetStatement{Token: p.curToken}
+    if !p.expectPeek(Token.IDENT){
+        return nil
+    }
+    stmt.Name = &ast.Identifer{Token:p.curToken, Value: p.curToken.Literal}
+    if !p.expectPeek(toekn.ASSIGN) {
+        return nil
+    }
+    // TODO: We're skipping the expression util we
+    // encoutner a semicolon
+    for !p.curTokenIs(token.SEMICOLON){
+        p.nextToken()
+    }
+    return stmt
+}
+func (p *Parser) curTokenIs(t token.TokenType) bool { 
+    return p.curToken.Type == t
+}
+func (p *Parser) peekTokenIs(t token.TokenType) bool { 
+    return p.peekToken.Type == t
+}
+func (p *Parser) expectPeek(t token.TokenType) bool { 
+    if p.peekTokenIs(t) {
+        p.nextToken()
+        return true 
+    } else {
+        return false
+    } 
+}
+```
+它奏效了，我们的测试通过了
+```
+$ go test ./parser
+ok monkey/parser 0.007s
+```
+我们可以解析`let`语句了，是不是很神奇，但是等等！
+
+让我们从`parseLetStatement`开始，它使用当前指向的`token`(`token.LET`)构建了`*ast.LetStatement`节点，然后调用`expectPeek`方法确保下一个`token`是否符合预期。首先它期待`token.IDENT`，然后使用它来构建一个`*ast.Identifer`节点，然后期待一个等号，最后它跳过了等号后面的表达式解析直到要一个冒号。只要我们知道如何解析表达式，跳过的部分将会被替换。
+
+`curTokenIs`和`peekTokenIs`方法不要太多的解释，它们非常有用，以至于我们在填充我们的解析器的时候一次次看到它们，我们可以用`!p.curToken(token.EOF)`代替for循环中`p.curToken.Type != token.EOF`条件。
+
+除了看看这些小方法， 让我们讨论一下`expectPeek`方法，`expectPeek`方法也是一个判断函数，它们原先的的目的是确保解析过程中`Token`的顺序是否正确。 我们`expectPeek`方法用来检查`peekToken`类型是否满足要求，只有满足要求才会调用`nextToken`方法。 正如你看到的，这个在解析器中频繁出现。
+
+但是如果我们遇到的`token`在`expectPeek`方法中不是期待的类型？目前，我们就是返回`nil`，在`ParseProgram`方法中将会忽略该空值。它会导致该语句会被忽略，因为错误的输入。你可以想象一下，它将会使得调试变得非常困难，因为没有人想接触那些没有么错误错误的解析器。
+
+幸运的是，我们将会做一些微小的改动来将解决该问题：
+```go
+// parser/parser.go
+type Parser struct { 
+// [...]
+errors []string 
+// [...]
+}
+func New(l *lexer.Lexer) *Parser { 
+    p := &Parser{
+        l: l,
+        errors: []string{}, 
+    }
+// [...]
+}
+func (p *Parser) Errors() []string { 
+    return p.errors
+}
+func (p *Parser) peekError(t token.TokenType) {
+    msg := fmt.Sprintf("expected next token to be %s, got %s instead", t, p.peekToken.Type)
+    p.errors = append(p.errors, msg) 
+}
+```
+现在解析器吼了`errors`字段，它们就是字符串切片，该字段在`New`方法的时候被初始化，当`peekToken`不匹配的时候，帮助函数`peekError`用来增加错误到`errors`中，通过使用`Errors`方法可以检查我们的解析器是否遇到任何错误。
+
+拓展我们的测试来确保这个和我们期望的是一样的：
+```go
+// parser/parser_test.go
+func TestLetStatements(t *testing.T) { 
+// [...]
+    program := p.ParseProgram() checkParserErrors(t, p)
+// [...]
+}
+func checkParserErrors(t *testing.T, p *Parser) { 
+    errors := p.Errors()
+    if len(errors) == 0 {
+        return
+    }
+    t.Errorf("parser has %d errors", len(errors)) 
+    for _, msg := range errors {
+        t.Errorf("parser error: %q", msg) 
+    }
+    t.FailNow() 
+}
+```
+新的`checkParserErrors`帮助函数仅仅是我们的解析器中的错误，如果有任何错误，它将错误输出并且停止当前测试。
+
+但是我们的当前解析器中没有生成任何错误，通过改变`epectPeek`我们可以自动增加一个错误如果我们调用得到错误的`token`。
+```go
+// parser/parser.go
+func (p *Parser) expectPeek(t token.TokenType) bool { 
+    if p.peekTokenIs(t) {
+        p.nextToken()
+        return true 
+    } else {
+        p.peekError(t)
+        return false
+    }
+}
+```
+现在我们可以改变我们的测试用例从这样：
+```
+input := `
+let x = 5;
+let y = 10;
+let foobar = 838383;
+`
+```
+变成每个一个输入都是无效的，因为都是了相关的`token`
+```
+input := ` let x 5;
+let = 10; 
+let 838383; `
+```
+我们运行我们的测试可以看到新的解析错误
+```
+$ go test ./parser
+--- FAIL: TestLetStatements (0.00s)
+parser_test.go:20: parser_test.go:22: got INT instead" parser_test.go:22:
+got = instead" parser_test.go:22: got INT instead"
+parser has 3 errors
+parser error: "expected next token to be =,\
+parser error: "expected next token to be IDENT,\ parser error: "expected next token to be IDENT,\
+FAIL
+FAIL monkey/parser 0.007s
+```
+正如你看到的，我们的解析器展示的一些微小的功能：它输出它遇到的每一个错误的语句。它没有在遇到第一个的时候就退出了，而是将他们保存下来以便我们重新运行程序去获取全部语法错误。它相当有用，尽管我们没有错误的行号和列号。
 <h2 id="ch03-parsing-retrun-statement">3.5 解析Return语句</h2>
-<h2 id="ch03-parsing-expression)">3.6 解析表达式</h2>
+我先前说过，我们会一步步填充看上去很空旷的`ParseProgram`方法。现在就是时候，我们将要解析`return`语句。在解析之前要做的就是在`ast`包中定义额必要的结构以便我们在抽象语法树中能够表示它们。
+
+接下来是在Monkey语言中的`return`语句：
+```
+return 5;
+return 10;
+return add(15);
+```
+有了`let`语句的经验，我们可以很容易地看出`return`语句的结构：
+```
+return <expression>;
+```
+`return`语句由单个`return`关键字和一个表达式组成，这样定义`ast.ReturnStatement`也就是非常简单的了：
+```go
+// ast/ast.go
+type ReturnStatement struct {
+    Token token.Token // the 'return' token
+    ReturnValue Expression
+}
+func (rs *ReturnStatement) statementNode() {}
+func (rs *ReturnStatement) TokenLiteral() string { return rs.Token.Literal }
+```
+上述的节点定义中，所有出现的内容你都看过：它有一个字段用来初始化`token`和`ReturnValue`字段来表示将要返回的表达式。现在我们会跳过解析表达式过程，只处理分号，后面我们会回来处理该部分的。`statementNode`和`TokenLiteral`方法使之能够满足`Node`和`Statement`接口。而且这些方法是定义在`*ast.LetStatement`上的。
+
+接下来的测试部分和之前的`let`语句也是差不多相同。
+```go
+// parser/parser_test.go
+func TestReturnStatements(t *testing.T) { 
+    input := `
+return 5; 
+return 10; 
+return 993322; `
+    l := lexer.New(input) p := New(l)
+    program := p.ParseProgram() checkParserErrors(t, p)
+    if len(program.Statements) != 3 {
+        t.Fatalf("program.Statements does not contain 3 statements. got=%d", len(program.Statements))
+    }
+    for _, stmt := range program.Statements {
+    returnStmt, ok := stmt.(*ast.ReturnStatement) 
+    if !ok {
+        t.Errorf("stmt not *ast.returnStatement. got=%T", stmt)
+        continue
+    }
+    if returnStmt.TokenLiteral() != "return" {
+        t.Errorf("returnStmt.TokenLiteral not 'return', got %q", returnStmt.TokenLiteral())
+    } 
+}
+```
+当然测试会进行拓展只要表达式解析完成即可。但是没关系，测试不是一成不变的。但是现在测试时失败的：
+```
+$ go test ./parser
+--- FAIL: TestReturnStatements (0.00s)
+parser_test.go:77: program.Statements does not contain 3 statements. got=0 FAIL
+FAIL monkey/parser 0.007s
+```
+所以现在通过修改`ParseProgram`方法将`token.RETURN`考虑进去就能够让测试通过：
+```go
+
+// parser/parser.go
+func (p *Parser) parseStatement() ast.Statement { 
+    switch p.curToken.Type {
+    case token.LET:
+        return p.parseLetStatement() 
+    case token.RETURN:
+        return p.parseReturnStatement() 
+    default:
+        return nil
+    } 
+}
+```
+接下来就是`parseReturnStatement`方法，该方法也是非常简单，没有很多的复杂的地方：
+```go
+// parser/parser.go
+func (p *Parser) parseReturnStatement() *ast.ReturnStatement { 
+    stmt := &ast.ReturnStatement{Token: p.curToken}
+    p.nextToken()
+    // TODO: We're skipping the expressions until we 
+    // encounter a semicolon
+    for !p.curTokenIs(token.SEMICOLON) {
+        p.nextToken() 
+    }
+    return stmt 
+}
+```
+它唯一做的事情就是构建一个`ast.ReturnStatement`对象，当前的`token`就是作为`Token`字段，然后通过调用`nextToken()`方法来解析表达式，但是现在并没有做，它跳过了每一个表达式直至遇到一个分号，就这样我们的测试通过了：
+```
+$ go test ./parser
+ok monkey/parser 0.009s
+```
+可以再一次庆祝了，我们现在可以解析Monkey语言中的所有语句了。是的，在`Monkey`中只有两种语句：`Let`语句和`Retrun`语句。接下来我么我们的编程语言中只包含了表达式，接下来我们将会解析它们。
+<h2 id="ch03-parsing-expression">3.6 解析表达式</h2>
+主观的来讲，解析表达式是编写解析器中最有趣的部分。正如我们刚刚看到的，解析语句相对比较直接。我们从左到右处理每个`token`，期待或者拒绝下一个token直到我们返回抽象语法树的节点。
+
+从另一方面来讲，解析表表达式有更多的挑战。操作符优先级是第一个需要考虑的，家接下来就是一个例子，我们说我们想要解析如下的算术表达式：
+```
+5 * 5 + 10
+```
+我们想要让我们的抽象语法树用以下的的形式来表达：
+```
+((5 * 5) + 10)
+```
+也就是说`5*5`在抽象语法树中要更低一些，比加法更早地执行。为了生成这样的抽象语法树，解析器需要知道操作符的优先级，也就是`*`的优先级比`+`要高，这也是常见的操作符优先级例子，但是在某些情况下，这个就非常重要了。考虑到如下形式：
+```
+5 * (5 + 10)
+```
+在这里，括号将`5+10`表达式组在一起，使它们的优先级得到提升。现在加法在乘法之前执行。因为括号比`*`有更高的优先级。接下来我们会看到更多的例子，优先级扮演着重要的角色。
+
+另外一个挑战是在表达式中，同样的`token`可以出现在不同的位置。与之相反的是，`let`只能出现在`let`语句的开始的地方，这样很容易帮我们决定剩下的语句应该是什么。比如看下面的表达式：
+```
+-5-10
+```
+在这里`-`操作符出现在表达式开始的地方，作为前缀操作符。然后组委中缀操作符出现在中间。同样的挑战如下：
+```
+5 * (add(2, 3) + 10)
+```
+尽管你可能不会认为括号也作为操作符，但是它同样出现了刚刚`-`中的问题。最外面的括号表示组合表达式，里面的括号表示了调用表达式。`token`位置是否有效取决于上下文，来确定它们之间的优先级。
+
+**Monkey中的表达式**
+
+在Monkey编程语言中，除了`let`和`return`语句外，其余的都是表达式，这些表达式有不同的形式。
+
+Monkey语言中的前缀表达式
+```
+-5
+!true
+!false
+```
+当然也有中缀表达式
+```
+5 + 5
+5 - 5
+5 / 5
+5 * 5
+```
+除了基础的算术操作符，也有一些比较操作符：
+```
+foo == bar
+foo != bar
+foo < bar
+foo > bar
+```
+当然正如我们先前看到的，我们可以使用括号将表达式组合起来影响执行的顺序：
+```
+5 * (5 + 5)
+(( 5 + 5 ) * 5) * 5
+```
+还有调用表达式
+```
+add(2, 3)
+add(add(2, 3), add(5, 10)) max(5, add(5, (5 * 5)))
+```
+标识符同样也是表达式
+```
+foo * bar / foobar
+add(foo, bar)
+```
+函数在Monkey中也是一等公民，字面函数也是表达式。我们可以使用`let`语句讲一个函数绑定到一个名字上。字面函数就是语句形式的表达式。
+```
+let add = fn(x, y) { return x+y };
+```
+我们也可以用字面函数代替标识符
+```
+fn(x, y) { return x + y }(5, 5) 
+(fn(x) { return x }(5) + 10 ) * 10
+```
+和其他语言一样，我们也有`if`表达式
+```
+let result = if (10 > 5) {true} else {false};
+result // => true
+```
+看到上述所有的不同形式的表达式，我们非常清楚需要一个很好的方法来正确的解析它们。我们老的方法是基于当前的Token来决定接下来要做什么并不能再次帮助我们，现在就是`Vaughan Patt`方法大显神威的时候。
+
+**指定向下操作符优先级**
+Vaughan Patt在他的`指顶向下操作符优先级`论文中提出了新的方法来解析它们，他的原文是这样的：
+> ……这非常容易理解、实现和使用，在实际使用中非常高效，而且满足大多部分用户来的需要。
+
+这篇论文在1973发表，但是在Pratt提出这个想法后很多年都没有支持者。知道最近几年，其他开发人员发现了Pratt的论文，编写实现他们导致`Pratt`的方法变得流行起来。Douglas Crockford的`JavaSrcipt: The Good Part`文章中，显示了如何将`Pratt`的想法用JavaScript实现。同样也有一片特别推荐的文章，是由Bob Nystrom写的，他是著名的`Game Programming Patterns`书的作者。它认为Pratt的方法非常容易理解和实现，并且简单的用Java实现了几个例子。
+
+这个解析方法由三种描述，被发明出来作为基于上下文无关文法和BNF的解析器的替代方案。
+
+同样也有主要的不同点：不同于由解析函数（在parseLetStatement中）由语法规则（在BNF或者EBNF中定义）定的，Pratt方法通过将单个`token`类型和函数联系起来。该想法中最重要的部分是每个`token`类型有两个解析函数，取决于该`token`的位置：中缀或者前缀。
+
+我猜现在还没有更大的意义，我们还没有看到如何将一个解析函数和语法结合起来，所以将`token`类型而不是语法规则并没有产生很大的作用，老实地说，我在写这小节的时候，我面临则“鸡生蛋和蛋生鸡”的问题。有没有更好的方法用抽象的术语来解释这个算法和展示实现过程？会不会导致你不停地翻页？或者可能导致你跳过实现的部分？
+
+答案是我决定不采用这两种方式。我们接下来要做的不是实现解析表达式而是近距离地看这个算法。最后我们将会拓展和完成该算法使之能够解析Monkey中的所有的表达式。
+
+在开始编写代码之前，我们先厘清一些概念。
+
+**概念**
+
+`前缀操作符`是出现在操作符前面的操作符，比如：
+```
+--5
+```
+在这里操作符`--`，操作数是整数`5`，操作符出现在操作数前面。
+
+`后缀操作符`是出现操作数后面的操作符，比如：
+```
+foobar++
+```
+在这里操作符`++`，操作数是标识符`foobar`，操作符出现在操作数后面。在Monkey语言中，我们不会构建任何后缀操作数。不是因为技术上的限制，而是保持本书内容的范围。
+
+而`中缀操作符`我们先前已经看过了，它出现在两个操作符之间，比如
+```
+5 * 8
+```
+在这里`*`操作符出现在两个整数`5`和`8`之间，中缀操作符出现在二元表达式中。
+
+其他的概念我们已经接触到了，比如`操作符优先级`。也叫做`操作顺序`，它表明了不同操作符之间的优先级，一个重要的例子就是我们先前看到的：
+```
+5 + 5 * 10
+```
+上述表达式的结果是55不是100，那是因为`*`操作符有更高的优先级，它比`+`操作符更重要，它应该比其他的操作符先执行。我有时候想，操作符的优先级比作操作符的粘性：用来描述操作数应该和哪一个操作符粘在一起。
+
+这些事基础的概念:`前缀`, `后缀`, `中缀`和`优先级`。让这些概念在我们脑海中定义好是非常重要的。我们将会在其他地方使用它们。
+
+现在我们开始输入和编写一些代码！
+
+**准备抽象语法树**
+
+为了解析表达式，我们首先要做的是准备抽象语法树。 正如我们先前看到的，在Monkey中程序是由一系列的语句构成的。一些事`let`语句，其余的是`return`语句，我们需要添加第三种类型语句：表达式语句。
+
+这听上述非常混淆，我之前告诉你`let`和`return`语句是Monkey语言中唯二的语句，但是表示语句不是一种与众不同的语句；它是只有表达式构成的语句，它仅仅是一个封装器，我们的确需要它因为在Monkey中这是合法的。我们可以输入如下的代码：
+```
+let x = 5;
+x + 10;
+```
+第一行是一个`let`语句，第二行是表达式语句。其他语言中没有表达式语句，但是在大部分脚本语言中，只有一行表达式的代码是可能的。所以我们需要在抽象语法树中增加节点类型
+```go 
+// ast/ast.go
+type ExpressionStatement struct {
+    Token token.Token // the first token of the expression 
+    Expression Expression
+}
+func (es *ExpressionStatement) statementNode() {}
+func (es *ExpressionStatement) TokenLiteral() string { return es.Token.Literal }    
+```
+这个`ast.ExpressionStatement`类型有两个字段：一个是`Token`字段，这个每一个节点都用，另外是`Expression`字段，它用来保存表达式。`ast.ExpressionStatement`实现了`ast.Statement`接口，也就意味着我们可以将它添加到`ast.Program`的`Statement`切片中。这也是我们为什么添加`ast.ExressopnStatement`的原因。
+
+有了`ast.ExresspionStatement`定义，我们可以重用先前的工作。但是为了使我们的工作更轻松点，我们可以在我们抽象语法树节点添加`String()`方法。它允许我们输出抽象语法树节点，这样用来调试和比较其他节点。这样在测试中非常有用。
+
+我们将要让`String()`方法称为`Node`接口的一部分：
+```go
+// ast/ast.go
+type Node interface { 
+    TokenLiteral() string 
+    String() string
+}
+```
+现在`ast`包中每一个节点都需要实现该方法。由于这些改变，我们的代码将不会被编译，因为编译器认为我们的抽象语法树中的节点没有完全实现`Node`接口。首先我们先为`*ast.Program`添加`String()`方法：
+```go
+import (
+     // [...]
+    "bytes"
+)
+func (p *Program) String() string {
+    var out bytes.Buffer
+    for _, s := range p.Statements {
+        out.WriteString(s.String())
+    }
+    return out.String()
+}
+```
+该方法并没有做很多的工作，它仅仅是创建了一个缓冲对象，然后往避免添加每一个语句调用`String()`的返回值。然后将缓冲区对象作为字符串返回。它将全部工作交给了`*ast.Program`中的`Statement`来完成。
+
+真正的工作是由下面三个语句`ast.LetStatement`，`ast.ReturnStatement`和`ast.ExpressionStatement`的`String()`方法完成的。
+```go
+// ast/ast.go
+func (ls *LetStatement) String() string { 
+    var out bytes.Buffer
+    out.WriteString(ls.TokenLiteral() + " ") 
+    out.WriteString(ls.Name.String()) 
+    out.WriteString(" = ")
+    if ls.Value != nil { 
+        out.WriteString(ls.Value.String())
+    }
+    out.WriteString(";")
+    return out.String() 
+}
+func (rs *ReturnStatement) String() string { 
+    var out bytes.Buffer
+    out.WriteString(rs.TokenLiteral() + " ")
+    if rs.ReturnValue != nil { 
+        out.WriteString(rs.ReturnValue.String())
+    }
+    out.WriteString(";")
+    return out.String() 
+}
+func (es *ExpressionStatement) String() string { 
+    if es.Expression != nil {
+        return es.Expression.String() 
+    }
+    return "" 
+}
+```
+当我们构件好表达式，其中的空值检查我们接下来会去掉的。
+
+现在我们为`ast.Identifier`增加`String()`方法。
+```go
+// ast/ast.go
+func (i *Identifer) String() string { return i.Value }
+```
+有了这个方法，我们可以仅仅调用`*ast.Program`的`String()`方法，就可以得到整个程序的字符串表示形式。这样可以让我们的`*ast.Program`变得可以测试，让我们以Monkey的源代码作为一个例子：
+```
+let myVar = anotherVar;
+```
+如果我们以此构建抽象语法树，我们可以对`String()`的返回值做一些如下的测试：
+```go
+package ast
+import ( 
+    "monkey/token"
+    "testing"
+)
+func TestString(t *testing.T) { 
+    program := &Program{
+    Statements: []Statement{ 
+        &LetStatement{
+            Token: token.Token{Type: token.LET, Literal: "let"}, Name: &Identifier{
+                Token: token.Token{Type: token.IDENT, Literal:"myVar"},
+                Value: "myVar", 
+            },
+            Value: &Identifier{
+            Token: token.Token{Type: token.IDENT, Literal:"anotherVar"}, 
+            Value: "anotherVar",}, 
+            }, 
+        }, 
+    }
+    if program.String() != "let myVar = anotherVar;" { 
+        t.Errorf("program.String() wrong. got=%q", program.String())
+    } 
+}
+```
+在上述测试中，我们手动构建了抽象语法树。 当为解析器编写测试的时候当然不需要这么。当然需要最解析器生成的抽象语法树需要进行测试。为了测试目的，这个测试，向我们展示通过比较解析的输出可以让我们的测试变得更加可读。这也是变得非常可用如果我们解析表达式。
+
+好消息是所有的工作都已经完成了，是时候完成`Pratt`解析器了。
+
+**实现Pratt解析器**
+
+Pratt解析器的主要思想是将解析函数和`token`类型联系在一起。无论遇到什么类型的`token`，解析函数将会被调用，并且解析出正确的表达式，并且返回抽象语法树的节点。每个`token`类型最多拥有两个相关的解析函数，这取决于该`token`是在前缀还是后缀位置发现的。
+
+首先要做的建立这些关联，我们定义了两种类型的函数：一个前缀解析函数另一个是中缀解析函数。
+```go
+// parser/parser.go
+type (
+    prefixParseFn func() ast.Expression
+    infixParseFn func(ast.Expression) ast.Expression
+)
+```
+两个函数都返回`ast.Expression`，因为它们是要解析表达式。但是只有`infixParseFn`接受一个参数：另一个表达式。这个参数是中缀操作符的左边表达式，前缀操作符没有左边部分。我知道现在还没有看出有什么意义，但是请接受我这么做，接下来你会看到它们是怎么工作的。从现在请记住，当遇到`token`类型在前缀位置上调用`prefixParseFn`，当遇到`token`类型在中缀位置上，调用`infixParseFn`方法。
+
+为了在遇到不同类型的`token`时候，我们的解析器正确地得到`prefixParseFn`或者`infixParseFn`，我们需要在`Parser`结构中添加两个字典映射：
+```go
+// parser/parser.go
+type Parser struct {
+    l *lexer.Lexer 
+    errors []string
+    curToken token.Token 
+    peekToken token.Token
+    prefixParseFns map[token.TokenType]prefixParseFn
+    infixParseFns map[token.TokenType]infixParseFn 
+}
+```
+有了映射表，我们可以通过检查表（前缀或者中缀)得到关联当前`curToken.Type`得到正确的解析函数。
+
+我们也需要增加添加这两个映射表的词条的帮助函数：
+```go
+func (p *Parser) registerPrefix(tokenType token.TokenType, fn      prefixParseFn) { 
+    p.prefixParseFns[tokenType] = fn
+}
+func (p *Parser) registerInfix(tokenType token.TokenType, fn infixParseFn) { 
+    p.infixParseFns[tokenType] = fn
+}
+```
+现在我们已经准备好去算法的核心部分：
+
+**标识符**
+
+我们现在开始可能在Monkey编程语言中最简单表达式：标识符。使用标识符的表达式语句的样子如下：
+```
+foobar;
+```
+当然`foobar`非常多元的了，在其他上下文环境中标识符也是表达式，并不仅仅是表达式语句。
+```
+add(foobar, barfoo);
+foobar + barfoo;
+if (boobar) {
+    // [....]
+}
+```
+在这里，我们将标识符作为函数额参数，作为中缀表达式的在操作树，同样也可以作为条件语句的单独表达式。它们可以被用在上述的所有的环境中，因为标识符也是表达式，就像`1+2`。就跟任何表达式一样，标识符能够生成值，它输出它们绑定的值。
+
+让我们开始以测试开始
+```go
+func TestIdentifierExpression(t *testing.T) {
+	input := "foobar;"
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+	if len(program.Statements) != 1 {
+		t.Fatalf("program has not enough statements. got=%d",
+			len(program.Statements))
+	}
+	stmt, ok := program.Statements[0].(*ast.ExpressionStatement)
+	if !ok {
+		t.Fatalf("program.Statements[0] is not ast.ExpressionStatement. got=%T",
+			program.Statements[0])
+	}
+	ident, ok := stmt.Expression.(*ast.Identifier)
+	if !ok {
+		t.Fatalf("exp not *ast.Identifier. got=%T", stmt.Expression)
+	}
+	if ident.Value != "foobar" {
+		t.Errorf("ident.Value not %s. got=%s", "foobar", ident.Value)
+	}
+	if ident.TokenLiteral() != "foobar" {
+		t.Errorf("ident.TokenLiteral not %s. got=%s", "foobar",
+			ident.TokenLiteral())
+	}
+}
+```
+它看上去有很多行代码，但是仅仅是简单的工作。我们解析输入`foobar;`，检查解析错误，然后判断`*ast.Program`节点中`Statment`数量，然后检查是不是只有一个语句，并且类型是`*ast.ExpressionStatement`。然后检查`*ast.ExpressionStatement.Expression`是否为`*ast.Identifier`。最后检查我们的标识符是否拥有正确的值`foobar`。
+
+当然，我们的解释器测试是失败的
+```
+$ go test ./parser
+--- FAIL: TestIdentifierExpression (0.00s)
+parser_test.go:110: program has not enough statements. got=0 
+FAIL
+FAIL monkey/parser 0.007s
+```
+解析器目前还不知道任何关于表达式相关知识，我们需要编写`parseExpression`方法。
+
+首先要做的是的拓展我们解析器的`parseStatement()`方法，以便于它能解析表达式语句。由于在Monkey中只有两个真正额语句`let`语句和`return`语句，如果我们没有遇到上述的语句，我们就尝试解析表达式语句:
+```go
+// parser/parser.go
+func (p *Parser) parseStatement() ast.Statement { 
+    switch p.curToken.Type {
+    case token.LET:
+        return p.parseLetStatement() 
+    case token.RETURN:
+        return p.parseReturnStatement() 
+    default:
+        return p.parseExpressionStatement() 
+    }
+}
+```
+解析表达式语句看上去是这样的：
+```go
+
+// parser/parser.go
+func (p *Parser) parseExpressionStatement() *ast.ExpressionStatement { 
+    tmt := &ast.ExpressionStatement{Token: p.curToken}
+    stmt.Expression = p.parseExpression(LOWEST)
+    if p.peekTokenIs(token.SEMICOLON) { 
+        p.nextToken()
+    }
+    return stmt 
+}
+```
+我们已经知道这么做了：构建我们的抽象语法树，然后调用其他解析函数来填充字段。在这个例子中，我们有些不同了：我们调用的`parseExpression()`方法并不存在，仅仅包含了一个常量`LOWEST`，而且它也不存在。然后我们检查备选的分号。是的，它是备选的。如果`peekToken`是`token.SEMICOLON`，我们前进`curToken`。如果不存在，同样也是无所谓的，我们不会往解析器中添加错误。那是因为我们希望表达式语句的分号是备选的。（因为在REPL中输入`5+5`更加容易一点）
+
+如果我们现在运行测试，我们可以看到一个编译错误，因为`LOWEST`是未定义的。没关系，现在我们添加它，定义Monkey编程语言中的优先级。
+```go
+// parser/parser.go
+const (
+    _ int = iota
+    LOWEST
+    EQUALS // == 
+    LESSGREATER // > or < 
+    SUM // + 
+    PRODUCT // *
+    PREFIX // -X or !X
+    CALL // myFunction(X) )
+```
+在这里我们使用`iota`给下面的每一个常量自增的值，空白标识符`_`占据着零值。剩下的常量将会被赋值为`1`到`7`，数字不重要，但是他们的循序和关系非常重要。我们需要这些常量要作什么接下来会给出答案：`*`操作符比`==`符优先级要高？
+
+在`parseExpressionStatement`中，我们将最低可能优先级传递给`parseExpression`，因为目前我们还没有解析任何东西，我们不能比较任何优先级。我保证过不了多久，我们会将其变得有意义。让我们开始编写`parseExpression`:
+```go
+// parser/parser.go
+func (p *Parser) parseExpression(precedence int) ast.Expression {       prefix := p.prefixParseFns[p.curToken.Type]
+    if prefix == nil {
+        return nil
+    }
+    leftExp := prefix()
+    return leftExp 
+}
+```
+这是初步版本，它所做的全部工作就是检查`p.curToken`在前缀位置上是否关联了一个解析函数。如果有，调用解析函数，如果没有然后`nil`。现在只能做这些因为我们还没有将`token`关联到任何函数，接下来我们要做的是：
+```go
+// parser/parser.go
+func New(l *lexer.Lexer) *Parser { 
+    // [...]
+    p.prefixParseFns = make(map[token.TokenType]prefixParseFn) p.registerPrefix(token.IDENT, p.parseIdentifier)
+// [...]
+}
+func (p *Parser) parseIdentifier() ast.Expression {
+    return &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
+}
+```
+我们修改了`New()`函数，来初始化`prefixParseFns`字典并且注册解析函数：如果我们遇到`token.IDENT`，解析函数调用`parseIdentifier`方法。
+
+`parseIdentifier`方法并没有做很多工作，它仅仅返回一个`*ast.Identifier`包含了当前`token`作为`Token`字段和`token`的明面值作为`token`的值。它没有前进`token`，也没有调用`nextToken`。这是非常重要的，我们所有的函数`prefixParseFn`和`infixParseFn`都遵循如下协议规则：开始于`curToken`，它是和你当前`token`类型关联的，然后返回你的表达式类型的最后一个`token`。千万不要前进太远。
+
+信不信由你，我们的测试通过了：
+```
+$ go test ./parser
+ok monkey/parser 0.007s
+```
+我们成功地解析了标识符表达式。好的，在开始庆祝之前，让我们长吸一口气，我们接下来将会编写更过的解析函数。
+
+**整数字面值**
+
+解析整数字面值和标识符一样简单，它看上去是这样的：
+```
+5;
+```
+是的，整数字面值也是表达式。它生成的值就是整数本身，再一次，请思考一下整数字面值可以出现哪些地方可以明白为什么它是表达式：
+```
+let x = 5;
+add(5, 10);
+5 + 5 + 5;
+```
+我们可以使用任何表达式来替换整型字面值都是合法的，比如标识符、调用表达式，分组表达式、函数字面值诸如此类。所有的表达式都可以互换的，整型字面值也是其中的一个。
+
+接下来的测试用例和之前的标识符测试用例比较类似：
+```go
+func TestIntegerLiteralExpression(t *testing.T) {
+	input := `5;`
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+	if len(program.Statements) != 1 {
+		t.Fatalf("program has not enough statements. got=%d",
+			len(program.Statements))
+	}
+	stmt, ok := program.Statements[0].(*ast.ExpressionStatement)
+	if !ok {
+		t.Fatalf("program.Statemtnets[0] is not ast.ExpressionStatement. got=%T",
+			program.Statements[0])
+	}
+	integer, ok := stmt.Expression.(*ast.IntegerLiteral)
+	if !ok {
+		t.Fatalf("exp is not *ast.IntegerLiteral. got=%T", stmt.Expression)
+	}
+	if integer.Value != 5 {
+		t.Errorf("integer.Value not %d. got=%d", 5, integer.Value)
+	}
+	if integer.TokenLiteral() != "5" {
+		t.Errorf("integer.TokenLiteral not %s. got=%s", "5", integer.TokenLiteral())
+	}
+}
+```
+正如之前标识符测试用例中的一样，我们使用简单的输入，传递个解析器。然后检查解析器没有遇到任何错误再次输出`*ast.Program.Statement`的数量。 紧接着我们做一次判断，是一个参数是否为`*ast.ExpressionStatement`，最后我们其他类型为`*ast.IntegerLiteral`。
+
+当然测试时不能通过的，因为`*ast.IntegerLiteral`还不存在，但是定义它并不难：
+```go
+// ast/ast.go
+type IntegerLiteral struct { 
+    Token token.Token
+    Value int64
+}
+func (il *IntegerLiteral) expressionNode() {}
+func (il *IntegerLiteral) TokenLiteral() string { return il.Token.Literal } 
+func (il *IntegerLiteral) String() string { return il.Token.Literal }
+```
+`*ast.IntergerLiteral`实现了`ast.Expression`接口，正如`*ast.Identifier`一样，但是有一个显著的不同是它的结构本身：`Value`字段类型是`int64`而不是`string`。 这个字段用来保存整型字面值代表的真正值。当我们在构建`*ast.IntegerLiteral`的时候，我们需要将`*ast.Integeral.Token.Literal()`的字符串转换为`int64`。
+
+调用解析函数最好的位置在关联`Token.INT`，该函数名叫`parseIntegerLiteral`：
+```go
+// parser/parser.go
+import ( 
+    // [...]
+    "strconv"
+)
+func (p *Parser) parseIntegerLiteral() ast.Expression { 
+    lit := &ast.IntegerLiteral{Token: p.curToken}
+    value, err := strconv.ParseInt(p.curToken.Literal, 0, 64) 
+    if err != nil {
+        msg := fmt.Sprintf("could not parse %q as integer", p.curToken.Literal) 
+        p.errors = append(p.errors, msg)
+        return nil
+    }
+    lit.Value = value
+    return lit 
+}
+```
+和`parseIdentifier`方法比起来相当简单了。唯一不同的是它调用`strconv.ParseInt`，该函数将一个字符串转换一个`int64`。这个值将会保存在我们将会返回的`*ast.IntegerLiteral`节点的`Value`字段中。如果转换失败，我们在解析器的错误列表中增加一个错误。
+
+但是我们的测试还是不能通过：
+```
+$ go test ./parser
+--- FAIL: TestIntegerLiteralExpression (0.00s)
+parser_test.go:162: exp not *ast.IntegerLiteral. got=<nil> FAIL
+FAIL monkey/parser 0.008s
+```
+
+在抽象语法树中，我们得到的是一个`nil`而不是`*ast.IntegerLiteral`。原因是`parseExpresion`方法不能为当前`token.INT`得到一个`parsefixParseFn`方法。 我们注册`parseIntegerLiteral`方法就能让测试通过。
+```go
+// parser/parser.go
+func New(l *lexer.Lexer) *Parser { 
+    // [...]
+    p.prefixParseFns = make(map[token.TokenType]prefixParseFn) p.registerPrefix(token.IDENT, p.parseIdentifier) p.registerPrefix(token.INT, p.parseIntegerLiteral)
+    // [...]
+}
+```
+当`parseIntegerLiteral`注册完毕，我们的解析器就知道如何处理`token.INT`了， 它会调用`parseIntegerLiteral`方法，然后返回`*ast.IntegerLiteral`。这样做的话，我们的测试通过了。
+```
+$ go test ./parser
+ok monkey/parser 0.007s
+```
+现在已经完成标识符和整数字面值解析，让我们开始继续解析前缀操作数。
+
+
+**前缀操作数**
+
+在Monkey语言中有两种前缀操作符:`!`和`-`，它们的用法和其他编程语言一样：
+```
+-5;
+!foobar;
+5 + -10;
+```
+使用的方式如下：
+```
+<prefix operator><expression>
+```
+任何在前缀操作符后面的表达式都是操作数，下面这些都是有效的：
+```
+！isGreaterThanZero(2);
+5 + -add(5, 5);
+```
+这也就意味着抽象语法树中前缀操作符表达式可以指向任何表达式作为它的操作数。
+
+但是首先是测试，接下来是前缀操作符的测试用例：
+```go
+func TestParsingPrefixExpression(t *testing.T) {
+	prefixTests := []struct {
+		input        string
+		operator     string
+		integerValue int64
+	}{
+		{"!5;", "!", 5},
+		{"-15;", "-", 15},
+	}
+	for _, tt := range prefixTests {
+		l := lexer.New(tt.input)
+		p := New(l)
+		program := p.ParseProgram()
+		checkParserErrors(t, p)
+		if len(program.Statements) != 1 {
+			t.Fatalf("program.Statement doest not contain %d statements. got=%d\n",
+				1, len(program.Statements))
+		}
+		stmt, ok := program.Statements[0].(*ast.ExpressionStatement)
+		if !ok {
+			t.Fatalf("program.Statements[0] is not ast.ExpressionStatement. got=%T",
+				program.Statements[0])
+		}
+		exp, ok := stmt.Expression.(*ast.PrefixExpression)
+		if !ok {
+			t.Fatalf("stmt is not ast.PrefixExpression. got=%T", stmt.Expression)
+		}
+		if exp.Operator != tt.operator {
+			t.Fatalf("exp operator is not '%s'. got=%s",
+				tt.operator, exp.Operator)
+		}
+		if !testLiteralLiteral(t, exp.Right, tt.integerValue) {
+			return
+		}
+	}
+}
+```
+在测试函数中包含了很多代码，主要是两个原因：首先通过`t.Errorf`方法检查错误占据了大量的内容；还有一点是使用表驱动的测试方法。这个方法可以帮助我们省去好多测试代码。虽然只有两行代码，但是重复的编写测试代码意味着我们需要写很多重复的代码。因为测试背后的逻辑代码是相同的，所以我们共同使用测试。两个测试用例(!5和-15作为输入)不同点仅仅在于其期望的操作符和整数不同。
+
+在测试函数中，我们迭代切片中的输入，然后对生成的抽象语法树进行判断。正如你看到的，在最后我们使用新的帮助函数`testIntegerLiteral`来测试`*ast.PrefixExpression`的`Right`字段的值是否为正确的整数。 下面就是帮助函数，这样我们可以专注于`*ast.PrefixExpression`的测试用例，不过它的字段接下我们会用到。
+```go 
+func testIntegerLiteral(t *testing.T, il ast.Expression, value int64) bool {
+	integ, ok := il.(*ast.IntegerLiteral)
+	if !ok {
+		t.Errorf("il not *ast.IntegerLiteral. got=%T", il)
+		return false
+	}
+	if integ.Value != value {
+		t.Errorf("integ.Value not %d. got=%d", value, integ.Value)
+		return false
+	}
+	if integ.TokenLiteral() != fmt.Sprintf("%d", value) {
+		t.Errorf("integ.TokenLiteral not %d. got=%s", value,
+			integ.TokenLiteral())
+		return false
+	}
+	return true
+}
+```
+上述函数并没有新奇的地方，我们之前在`TestIntegerLiteralExpression`中已经看到了，但是通过小的帮助函数可以让我们的新测试变得更叫可读。
+
+正如我们期望的，测试还是没有通过：
+```
+$ go test ./parser
+# monkey/parser
+parser/parser_test.go:210: undefined: ast.PrefixExpression FAIL monkey/parser [build failed]
+```
+我们需要定义`ast.PrefixExpression`节点：
+```go
+//ast/ast.go
+type PrefixExpression struct {
+	Token    token.Token // the prefix token, e.g. !
+	Operator string
+	Right    Expression
+}
+
+func (pe *PrefixExpression) expressionNode()      {}
+func (pe *PrefixExpression) TokenLiteral() string { return pe.Token.Literal }
+func (pe *PrefixExpression) String() string {
+	var out bytes.Buffer
+	out.WriteString("(")
+	out.WriteString(pe.Operator)
+	out.WriteString(pe.Right.String())
+	out.WriteString(")")
+	return out.String()
+}
+```
+同样也没有什么稀奇的，`*ast.PrefixExpression`节点有两个值得注意的字段：`Operator`和`Right`。`Operator`是一个字符串，它将会是`-`或者`!`。`Right`字段将会包含操作符右边的表达式。
+
+虽然`*ast.PrefixExpression`已经定义，但是测试同样是失败，伴随这奇怪的错误信息
+```
+$ go test ./parser
+--- FAIL: TestParsingPrefixExpressions (0.00s)
+parser_test.go:198: program.Statements does not contain 1 statements. got=2 FAIL
+FAIL monkey/parser 0.007s
+```
+为什么`program.Statements`包含一个语句而不是期待的两个？原因是`parseExpression`并没有认出我们的前缀操作符，仅仅返回一个`nil`，所以`program.Statements`不包含一个语句仅仅是一个`nil`。
+
+我们可以做的更好，通过拓展我们的解析器。 `parseExpression`方法可以给出更好的错误信息：
+```go
+// parser/parser.go
+func (p *Parser) noPrefixParseFnError(t token.TokenType) {
+	msg := fmt.Sprintf("no prefix parse function for %s found", t)
+	p.errors = append(p.errors, msg)
+}
+func (p *Parser) parseExpression(precedence int) ast.Expression {
+	prefix := p.prefixParseFns[p.curToken.Type]
+	if prefix == nil {
+		p.noPrefixParseFnError(p.curToken.Type)
+		return nil
+	}
+	leftExp := prefix()
+	return leftExp
+}
+```
+小小的帮助函数`noPrefixParseFnError`仅仅是在解析器的`error`字段增加了格式化的错误信息。但是一旦我们的测试失败，我们能够得到更好的错误消息。
+```
+$ go test ./parser
+--- FAIL: TestParsingPrefixExpressions (0.00s)
+parser_test.go:227: parser has 1 errors
+parser_test.go:229: parser error: "no prefix parse function for ! found" FAIL
+FAIL monkey/parser 0.010s
+```
+现在非常清楚我们需要做什么：编写前缀表达式的解析函数并且注册到我们的解析器中。
+```go
+// parser/parser.go
+func New(l *lexer.Lexer) *Parser { 
+    // [...]
+    p.registerPrefix(token.BANG, p.parsePrefixExpression)
+    p.registerPrefix(token.MINUS, p.parsePrefixExpression)
+    // [...]
+}
+func (p *Parser) parsePrefixExpression() ast.Expression { 
+    expression := &ast.PrefixExpression{
+        Token: p.curToken,
+        Operator: p.curToken.Literal, 
+    }
+    p.nextToken()
+    expression.Right = p.parseExpression(PREFIX)
+    return expression 
+}
+```
+对于`token.BANG`和`token.MINUS`，我们注册同样的方法`prefixParseFn`:它仅仅创建了`parsePrefixExpression`，该方法构建了抽象语法树的节点，在这个例子中是`*ast.PrefixExpression`，就跟我们之前看到的解析函数。但是有一点不同的是：它的确前进了`token`的位置通过调用`p.nextToken()`方法。
+
+当`parsePrefixExpression`被调用，`p.curToken`是`token.BANG`或者`token.MINUS`其中的一个，否则它都不会被调用。为了正确解析前缀表达式比如`-5`，不止一个`token`被消费掉了。所以在使用`p.curToken`之后创建一个`*ast.PrefixExpression`节点。这个方法前进`token`然后再次调用`parseExpression`方法。这时候前缀操作符将作为参数，虽然现在还没有使用，不久我们就会看到使用这个的好处。
+
+现在，当`parseExpression`被`parsePrefixExpression`调用的时候，输入的`token`已经前进一个并且当前的`token`是位于前缀操作符的后面。在`-5`的例子中，当`parseExpression`被调用的时候，`p.curToken.Type`是`token.INT`。然后`parseExpression`检查注册的前缀解析函数，然后发现了`parseIntegerLiteral`，它构建了`*ast.IntegerLiteral`节点并且返回。 然后`parsePrefixExpression`使用刚刚返回值填充`*ast.PrefixExpression`的`Right`字段。
+
+现在我们的测试通过了：
+```
+$ go test ./parser
+ok monkey/parser 0.007s
+```
+还记得我们之前关于我们解析函数定义的协议在这里得到实践：`parsePrefixExpression`开始于`p.curToken`(前缀操作符),然后返回的时候`p.curToken`是前缀操作数的位置，它是表达式最后一个`token`。这些`token`前进了足够的位置。这些代码足够整洁，这也是递归方法的强大之处。
+
+当然，`parseExpression`方法中的`precedence`参数仍然非常困惑，因为目前它们还没有被使用。但是我们发现了一些比这还重要的内容：这个值得改变取决于调用者是否知道当前上下文环境。`parseExpressionStatements`对于优先级层次一无所知所以仅仅使用`LOWEST`。但是`parsePrefixExpression`传递个给`PREFIX`优先级给`parseExpression`函数，因为它要解析前缀表达式。
+
+现在我们知道`precedence`在`parseExpression`中如何使用，因为我们接下来要解析中缀表达式。
+
+**中缀表达式**
+
+接下来我们将要解析下面八种中缀操作符
+```
+5 + 5; 
+5 - 5; 
+5 * 5; 
+5 / 5; 
+5 > 5; 
+5 < 5;
+5 == 5; 
+5 != 5;
+```
+不要被这些`5`所打扰，正如前缀表达式一样，这里我们可以在左边和右边使用任何表达式。
+```
+<expression><infix operator><expression>
+```
+因为左右两边两个操作数，因此有时这种表达式又称为二元表达式，与此相反的叫做一元表达式。尽管我们可以在操作符的两边使用任何表达式，但是我们打算编写一些测试仅仅包含整型字面值。只要我们能够让测试通过，我们将会拓展它们至更多的操作数类型。下面是测试：
+```go
+func TestParsingInfixExpression(t *testing.T) {
+	infixTests := []struct {
+		input      string
+		leftValue  int64
+		operator   string
+		rightValue int64
+	}{
+		{"0.4+1.3", 0.4, "+", 1.3},
+		{"5+5;", 5, "+", 5},
+		{"5-5;", 5, "-", 5},
+		{"5*5;", 5, "*", 5},
+		{"5/5;", 5, "/", 5},
+		{"5>5;", 5, ">", 5},
+		{"5<5;", 5, "<", 5},
+		{"5==5;", 5, "==", 5},
+		{"5!=5;", 5, "!=", 5},
+	}
+	for _, tt := range infixTests {
+		l := lexer.New(tt.input)
+		p := New(l)
+		program := p.ParseProgram()
+		checkParserErrors(t, p)
+		if len(program.Statements) != 1 {
+			t.Fatalf("program.Statements does not contain %d statements. got=%d\n",
+				1, len(program.Statements))
+		}
+		stmt, ok := program.Statements[0].(*ast.ExpressionStatement)
+		if !ok {
+			t.Fatalf("program.Statements[0] is not ast.ExpressionStatement. got=%T",
+				program.Statements[0])
+		}
+		if !testInfixExpression(t, stmt.Expression, tt.leftValue, tt.operator, tt.rightValue) {
+			return
+		}
+	}
+}
+```
+这些测试直接从`TestParsingPrefixExpressions`拷贝过来的，除了我们现在结果的抽象语法树的节点的左边和右边都做了相等判断。在这里同样也是用表驱动测试方法，以便我们将来能够对它们进行拓展。
+
+当然测试是失败的，当然我们没有发现`*ast.InfixExpression`的定义。为了真正让测试失败，我们定义`ast.InfixExpression`:
+```go
+//ast/ast.go
+type InfixExpression struct {
+	Token    token.Token
+	Left     Expression
+	Operator string
+	Right    Expression
+}
+
+func (ie *InfixExpression) expressionNode()      {}
+func (ie *InfixExpression) TokenLiteral() string { return ie.Token.Literal }
+func (ie *InfixExpression) String() string {
+	var out bytes.Buffer
+	out.WriteString("(")
+	out.WriteString(ie.Left.String())
+	out.WriteString(" " + ie.Operator + " ")
+	out.WriteString(ie.Right.String())
+	out.WriteString(")")
+	return out.String()
+}
+```
+就跟之前`ast.PrefixExpression`，我们定义`ast.InfixExpression`，通过定义`expressionNode()`，`TokenLiteral()`和`String()`实现了`ast.Expression`和`ast.Node`接口。唯一的不同是`ast.PrefixExpression`有了新的字段`Left`，它可以保存任何表达式。
+
+通过这种方式，我们可以运行测试。现在测试返回新的错误信息：
+```
+$ go test ./parser
+--- FAIL: TestParsingInfixExpressions (0.00s)
+parser_test.go:246: parser has 1 errors
+parser_test.go:248: parser error: "no prefix parse function for + found" FAIL
+FAIL monkey/parser 0.007s
+```
+但是错误信息很清晰：它说"没有找到为加号处理的解析函数”，但是问题在于我们并不想让我们的解析器找到前缀解析函数，我们想找到中缀解析函数。
+
+到这个点上，我们将会从好奇转向惊叹，因为我们现在要完成的`parseExpression`方法。为了完成它，我们首先需要一个优先级表和一些帮助方法。
+```go
+// parser/parser.go
+var precedences = map[token.TokenType]int{
+	token.EQ:       EQUALS,
+	token.NOT_EQ:   EQUALS,
+	token.LT:       LESSGREATER,
+	token.GT:       LESSGREATER,
+	token.PLUS:     SUM,
+	token.MINUS:    SUM,
+	token.SLASH:    PRODUCT,
+	token.ASTERISK: PRODUCT,
+}
+func (p *Parser) peekPrecedence() int {
+	if p, ok := precedences[p.peekToken.Type]; ok {
+		return p
+	}
+	return LOWEST
+}
+func (p *Parser) curPrecedence() int {
+	if p, ok := precedences[p.curToken.Type]; ok {
+		return p
+	}
+	return LOWEST
+}
+```
+`precedences`是我们的优先级表：它关联Token类型到它们的优先级。优先级的值就是我们先前定义的常量，一系列自增的整数。这个表告诉我们+（`token.PLUS`）和-（`token.MINUS`）拥有相同的优先级，但是它们比`*`（`token.ASTERISK`)和`/`（`token.SLASH`）优先级低。
+
+`peekPrecedence`方法返回`p.peekToken`关联的`token`类型的优先级，如果它没有发现`p.peekToken`的优先级，则返回默认优先级`LOWEST`。最低的优先级每一个操作符都可以拥有。`curPrecedence`方法做同样的工作，只不过针对的是`p.curToken`。
+
+接下来要做的事为一个中缀解析函数注册给所有的中缀操作符：
+```go
+// parser/parser.go
+func New(l *lexer.Lexer) *Parser { 
+// [...]
+    p.infixParseFns = make(map[token.TokenType]infixParseFn) p.registerInfix(token.PLUS, p.parseInfixExpression) p.registerInfix(token.MINUS, p.parseInfixExpression) p.registerInfix(token.SLASH, p.parseInfixExpression) p.registerInfix(token.ASTERISK, p.parseInfixExpression) p.registerInfix(token.EQ, p.parseInfixExpression) p.registerInfix(token.NOT_EQ, p.parseInfixExpression) p.registerInfix(token.LT, p.parseInfixExpression) p.registerInfix(token.GT, p.parseInfixExpression)
+// [...]
+}
+```
+我们先前已经拥有了`registerInfix`方法，到现在我们最终使用它们。每一个中缀操作符关联到同一个解析函数中，叫做`parseInfixExpression`，它看上去是这样的：
+```go
+func (p *Parser) parseInfixExpression(left ast.Expression) ast.Expression {
+	expression := &ast.InfixExpression{
+		Token:    p.curToken,
+		Operator: p.curToken.Literal,
+		Left:     left,
+	}
+	precedence := p.curPrecedence()
+	p.nextToken()
+	expression.Right = p.parseExpression(precedence)
+	return expression
+}
+```
+最显著的不同在于，不同于`parsePrefixExpression`方法，在新的方法中我们接受了一个参数，`ast.Expression`类型的`left`。它用这个参数构建`ast.InfixExpression`节点中的`Left`字段，然后将当前`token`(也就是当前中缀表达式的操作符)的优先级保存至变量`precedence`中。然后调用`nextToken`方法前进token。最后调用`parseExpression`方法来获取`Right`字段，其中将`precedence`作为参数传递给方法。
+
+是时候揭开`Pratt`解析法的神秘面纱了，这是`parseExpression`函数的最后一个版本：
+```go
+func (p *Parser) parseExpression(precedence int) ast.Expression {
+	prefix := p.prefixParseFns[p.curToken.Type]
+	if prefix == nil {
+		p.noPrefixParseFnError(p.curToken.Type)
+		return nil
+	}
+	leftExp := prefix()
+	for !p.peekTokenIs(token.SEMICOLON) && precedence < p.peekPrecedence() {
+		infix := p.infixParseFns[p.peekToken.Type]
+		if infix == nil {
+			return leftExp
+		}
+		p.nextToken()
+		leftExp = infix(leftExp)
+	}
+	return leftExp
+}
+```
+Duang, 我们的测试通过了：
+```
+$ go test ./parser
+ok monkey/parser 0.006s
+```
+现在我们能够正式的解析中缀表达式了！等一下，究竟发生了？它究竟是怎么工作的？
+
+显然`parseExpression`现在能够做一些工作了，我们已经知道如何找到当前`token`关联的解析函数，然后调用它。这些我们在前缀操作符、标识符和整型字面值中也做了相关工作。
+
+新的内容在`parseExpression`函数中的中间循环部分，在中间循环体中，不停为下一个`token`寻找`infixParseFns`。如果找到这样的函数，调用它。将表达式作为参数传递给他，并将结果作为新值。不停的重复以上过程知道遇到一个更高的优先级的`token`。
+
+工作非常棒，让我们看看不同一些测试用例，有更多的操作符和不同的优先级，看看抽象语法树是否正确描述。
+```go
+func TestOperatorPrecedenceParsing(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"-a * b", "((-a) * b)"},
+		{"!-a", "(!(-a))"},
+		{"a+b+c", "((a + b) + c)"},
+		{"a+b-c", "((a + b) - c)"},
+		{"a*b*c", "((a * b) * c)"},
+		{"a*b/c", "((a * b) / c)"},
+		{"a+b/c", "(a + (b / c))"},
+		{"a+b*c+d/e-f", "(((a + (b * c)) + (d / e)) - f)"},
+		{"3+4;-5*5", "(3 + 4)((-5) * 5)"},
+		{"5>4==3<4", "((5 > 4) == (3 < 4))"},
+		{"5<4!=3>4", "((5 < 4) != (3 > 4))"},
+		{"3+4*5==3*1+4*5", "((3 + (4 * 5)) == ((3 * 1) + (4 * 5)))"},
+	}
+	for _, tt := range tests {
+		l := lexer.New(tt.input)
+		p := New(l)
+		program := p.ParseProgram()
+		checkParserErrors(t, p)
+		actual := program.String()
+		if actual != tt.expected {
+			t.Errorf("expected=%q, got=%q", tt.expected, actual)
+		}
+	}
+}
+```
+所有测试都通过了，这个相当神奇，难道不是吗？不同的`*ast.InfixExpression`正确地嵌套，这个幸亏我们在抽象语法树的节点中`String()`方法中正确使用括号。
+
+如果你正在抓耳牢骚想知道这个如何工作的，别担心。我们接下来近距离看看我们的`parseExpression`方法。
 <h2 id="ch03-how-pratt-parsing-works">3.7 Pratt解析法如何工作</h2>
+`parseExpression`背后的算法和解析函数与优先级共同组合完整地描述了`Vaughan Pratt`在`Top Down Operator Precedence`论文中的主要思想，但是和我们的实现过程还是有一点点不同。
+
+`Pratt`没有使用`Parser`结构而且也没有定义`*Parser`的相关方法，也没有使用字典，当然也没有使用`Go`语言。这边论文比go语言早发表36年。还有一些名称叫法上的不同：`prefixParseFns`在`Pratt`方法中叫做`nuds`(`null denotations`的简称)，`infixParseFns`叫做`leds`(`left denotations`的简称)。
+
+Pratt方法虽然是由伪代码完成，但是我们的`parseExpression`方法看上去和Pratt论文中给出的十分相似。它几乎使用了同样的算法而没有任何改变。
+
+我们打算跳过理论来解答为什么它能工作，仅仅展示它是怎么工作的和各个不同的组件（`parseExpression`,解析函数和优先级）如何组织在一起。假设我们将要解析如下的表达式语句：
+```
+1 + 2 + 3;
+```
+最大的挑战不是在于结果的抽象语法树如何表示每一个操作符和操作数，而是将不同的抽象语法树的节点嵌套在一起。我们想要的抽象语法树（序列化为字符串）看上去是这样的：
+```
+((1+2)+3)
+```
+这个抽象语法树需要两个`*ast.InfixExpression`节点，位置更高的`*ast.InfixExpression`节点做的右边是整数字面值`3`，左边应该是其他的`*ast.InfixExpression`。该节点做左有两边分别各自为整数字面值`1`和`2`。
+![](../figures/ast4.png)
+
+当解析`1 + 2 + 3`的时候，这个就是我我们解析器的输出。但是如何做到的呢？我们将在接下来的几个段落中回答这个问题。我们将会近距离看看我们解析器如何工作的，尤其当`parseExpressionStatement`第一次被调用的时候。当阅读接下面段落的时候，可以翻看之前的代码。
+
+让我们开始吧，当我们解析`1+2+3;`的时候将会发生什么？
+
+`parseExpressionStatement`调用`parseExpression(LOWEST)`，`p.curToken`和`p.peekToken`当前指向`1`和第一个`+`。
+![](./figures/expression1.png)
+
+首先`parseExpression`检查是否有`parseParseFn`关联当前的`p.curToken.Type`，因为它是`token.INT`，所以调用`parseIntegerLiteral`方法。 该方法返回一个`*ast.IntegerLiteral.Expression`并赋值给`leftExp`。
+
+接下来是在`parseExpression`中的循环部分，这个条件结果为true。
+```go
+for !p.peekTokenIs(token.SEMICOLON) && precedence < p.peekPrecedence() { 
+    // [...]
+}
+```
+`p.peekToken`不是`token.SEMICOLON`而且`peekPrecedence`(它返回`+`的优先级)比当前函数传递过来的`LOWEST`要高。下面是我们已经定义好的优先级：
+```go
+// parser/parser.go
+const (
+    _ int = iota 
+    LOWEST 
+    EQUALS // ==
+    LESSGREATER // > or <
+    SUM // +
+    PRODUCT // *
+    PREFIX // -X or !X
+    CALL // myFunction(X)
+)
+```
+所以条件判断为true，并且`paseExpression`执行循环体部分，它看上去是这样的：
+```go
+infix := p.infixParseFns[p.peekToken.Type] 
+if infix == nil {
+    return leftExp 
+}
+p.nextToken()
+leftExp = infix(leftExp)
+```
+它获取`p.peekToken.Type`关联的`infixParseFn`，它就是我们在`*Parser`中定义的`parseInfixExpression`方法，在调用该函数和将返回值赋给`leftExp`之前，将Token位置前进。
+![](./figures/expression2.png)
+
+在当前`token`的状态下，它调用`parseInfixExpression`方法，将已经解析好的`*ast.IntegerLiteral`传递给它。 接下来的`parseInfixExpression`是最有趣的部分，下面是方法：
+```go
+func (p *Parser) parseInfixExpression(left ast.Expression) ast.Expression {
+	expression := &ast.InfixExpression{
+		Token:    p.curToken,
+		Operator: p.curToken.Literal,
+		Left:     left,
+	}
+	precedence := p.curPrecedence()
+	p.nextToken()
+	expression.Right = p.parseExpression(precedence)
+	return expression
+}
+```
+值得注意的是在`left`是我们已经解析的`*ast.IntegerLiteral`，它是字面值1。
+
+`parseInfixExpression`保存了`p.curToken`的优先级（第一个`+`的优先级），然后前进`token`并且调用`parseExpression`方法，将之前保存的优先级作为参数传递给它。现在`parseExpression`第二次被调用，现在各个`token`看上去是这样的：
+![](./figures/expression3.png)
+
+首先`parseExpression`再一次查询`p.curToken`的对应的`prefixParseFn`方法，再一次还是`parseIntegerLiteral`方法，但是现在循环体的执行并没有返回true：表达式`1+2+3`的第一个`+`的优先级并不比第二个`+`的优先级低，它们是相等的。所以循环体将不会被执行。`ast.IntegerLiteral`将代表`2`被返回。
+
+现在回到`parseInfixExpression`中，`paseExpression`的返回值将赋值给新创建的`*ast.InfixExpression`的`Right`字段。就跟我们下面看到的：
+![](./figures/ast2.png)
+
+`*ast.InfixExpression`通过调用`parseInfixExpression`方法返回，现在回到我们最外面调用的`parseExpression`方法，在这里的优先级仍然是`LOWEST`。我们回到我们开始执行的循环的部分，并且再次执行循环。
+```go
+for !p.peekTokenIs(token.SEMICOLON) && precedence < p.peekPrecedence() { 
+    // [...]
+}
+```
+现在执行结果为`true`，因为`precedence`是`LOWEST`，而且`peekPrecedence`返回表达式第二个加法的优先级。`parseExpression`再一次执行循环函数体。不同的是现在的`leftExp`不再是`*ast.IntegerLiteral`中的`1`，而是`*ast.InfixExpression`返回的`praseInfixExpression`，代表着1+2。
+
+在`parseExpression`循环中获取`p.peekToek.Type`关联的`parseInfixExpression`，前进`token`并且调用`parseInfixExpression`方法，在这里使用`leftExp`组我诶参数。 `parseInfixExpression`再次调用`parseExpression`方法，这个时候返回最后的`*ast.IntegerLiteral`（代表着表达式中的3)。
+
+最后，在循环体的最后，`leftExp`看上去是这样的
+![](./figures/ast3.png)
+它的确就是我们想要的，操作符和操作数正确的嵌套在一起。我们的`token`看上去是这样的
+![](./figures/expression4.png)
+
+循环的条件执行结果为`false`
+```go
+for !p.peekTokenIs(token.SEMICOLON) && precedence < p.peekPrecedence() { 
+    // [...]
+}
+```
+现在`p.peekTokenIs(token.SEMICOLON)`执行结果为`true`，它将停止执行循环体内部。（调用`p.peekTokenIs(token.SEMICOLON)`不是严格必须的，我们的`peekPrecedence`方法遇到默认值返回`LOWEST`。但是我认为分号作为表达式结束符更加清晰，更加容易明白）
+
+循环部分已经完成`leftExp`被返回，我们回到`parseExpressionStatement`中，最终我们拥有了正确的`*ast.InfixExpression`，然后将他们当做`Expression`存放到`*ast.ExpressionStatement`中。
+
+现在我们知道我们的解析器如何去正确的解析`1+2+3`，这相当神奇。我认为`precedence`和`peekPrecedence`的使用也是相当有趣。
+
+
+但是优先级真正关系的是什么？在我们的例子中，每一个操作符(+)拥有相同的优先级。那么如果操作符拥有不同的优先级？我们能不能将`LOWEST`作为默认值，将所有的操作符作为`HIGHEST`。
+
+不行，这样会导致错误的抽象语法树，含有操作符的表达式的目标是有更高的优先级的操作数的深度比低优先级的操作更深，而这些都是有个优先级完成的。
+
+当`parseExpression`被调用的时候，`precedences`代表当前`parseExpression`的"右绑定"能力，什么叫做"右绑定"能力呢？也就是当前表达式的对右边的对`token`，操作数和操作符的绑定能力。
+
+假设我们的当前的右绑定能力最高，那么我们目前解析的的部分（复制给`letfExp`)将不会传递给下一个操作数对应的`infixParseFn`方法。将不会终止与一个左孩子节点，因为循环条件将不会执行为True。
+
+与之相反存在的能力也是有的，叫做左绑定能力。但是什么值能够展示左绑定能力呢？因为在`parseExpresion`方法中，我们`precedence`参数代表着当前右绑定能力，那么下一个操作数的左绑定能力来自哪里？简单来讲就是来自我们调用`peekPrecedence`。方法的返回值代表了下一个操作符的左绑定能力。
+
+它们都来自于循环中的`precedence < p.peekPrecedence()`条件表达式，这个条件检查下一个操作符或者`token`的左绑定是否比当前的右绑定值高。如果是的，我们解析过程将陷入下一个操作符，从左到右，然后结束于下一个操作符对应的`infixParseFn`方法。
+
+做一个例子来讲：比如我们解析`-1+2`,我们想要抽象语法树的表达是这样的`(-1)+2`而不是`-(1+2)`。第一个方法结束语`token.MINUS`绑定的`prefixParseFn`:`parsePrefixExpression`。让我们在看一看`parsePrefixExpression`方法的全部代码：
+```go
+func (p *Parser) parsePrefixExpression() ast.Expression {
+	expression := &ast.PrefixExpression{
+		Token:    p.curToken,
+		Operator: p.curToken.Literal,
+	}
+	p.nextToken()
+	expression.Right = p.parseExpression(PREFIX)
+	return expression
+}
+```
+它将`PREFIX`传递给`parseExpression`作为优先级，它也是当前`parseExpression`占据的右绑定能力。在我们先前定义中，`PREFIX`的优先级非常高。这也导致`parseExpression(PREFIX)`永远不会将`-1`的`1`传递个其他的`infixParseFn`。在这个例子中`precedence < p.peekPrecedence()`永远不会为`True`，也就意味着没有其他的`infixParseFn`将我们的`1`作为我们的左孩子节点。而是将`1`返回给我们前缀表达式的右孩子。
+
+回到我们最外面的`parseExpression`方法，在第一个`leftExp := prefix()`之后，`precedence`仍然还是`LOWEST`，因为它仍然是我们最外面的调用。我们的右绑定能力仍然是`LOWEST`，而现在的`p.peekToken`是指向`1+2`中的`+`号。
+
+我么现在是在循环的条件部分，并且执行来决定是否我们要执行我们的循环体。现在表明`+`操作数的优先级比当前的右绑定能力高，我们已经解析好了`-1`的前缀表达式，并且将它出的传递给`+`关联的`infixParseFn`. `+`的左绑定能力吸住了我们目前已经解析好的内容作为它在抽象语法树中的左孩子。
+
+`+`关联的`infixParseFn`是`parseInfixExpression`，它现在使用`+`的优先级作为他的右绑定能力，而没有使用`LOWEST`，因为这样做的话将导致另外一个`+`的拥有更高的左绑定值，并且将它吸入。如果这样做的话，表达式`a+b+c`将会返回`(a+(b+c))`，而不是我们期望的`((a+b)+c)`。
+
+将前缀操作符设置为高优先级是有用的，和中缀表达式很好的配合工作。在经典的优先级例子:`1+2*3`, `*`的左绑定能力比`+`的右绑定值高。所以解析的过程中将会`2`作为参数传递给`*`关联的`infixParseFn`方法。
+
+值得注意的是我们的解析器中，每一个`token`都拥有相同的左右绑定值，我们仅仅是用同一个值赋给他们两个，具体的值这个取决于上下文环境。
+
+如果我们的操作符必须右结合而不是左结合（在例子中`+`的结果是`(a+(b+c)`而不是`((a+b)+c)`），那么我们的必须使用较小的右绑定值在解析操作符表达式的右孩子的时候。 如果你考虑到其他语言`++`或者`--`的操作符，它们可以用在前缀和后缀的位置，你就可以看到区分左右绑定值的是非常有用的。
+
+因为我们的没有分别为设置左绑定和右绑定值，仅仅使用了相同的值，我们不能仅仅通过改变定义来达到这一点。但是举个例子来讲，为了让`+`进行右结合，我们可以在调用`parseExpression`方法的时候减少其优先级。
+```go
+// parser/parser.go
+func (p *Parser) parseInfixExpression(left ast.Expression) ast.Expression { 
+    expression := &ast.InfixExpression{
+        Token: p.curToken, 
+        Operator: p.curToken.Literal, 
+        Left: left,
+    }
+    precedence := p.curPrecedence()
+    p.nextToken()
+    expression.Right = p.parseExpression(precedence)
+    //                                    ^^^decrement here for right-associativtiy
+    return expression
+}
+```
+为了示范的目的，让我们短暂地改变这个方法，然看将会发生什么？
+```go
+// parser/parser.go
+func (p *Parser) parseInfixExpression(left ast.Expression) ast.Expression {
+    expression := &ast.InfixExpression {
+        Token: p.curToken,
+        Operator: p.curToken.Literal,
+        Left: left,
+    }
+    precedence := p.curPrecedence()
+    p.nextToken()
+    if expression.Operator == "+" {
+        expression.Right = p.parseExpression(precedence - 1)
+    }else{
+        expresion.Right = p.parseExpression(precedence)
+    }
+    return expression
+}
+```
+有着这些改变，我们的测试表明现在的`+`是右结合的：
+```
+$ go test -run TestOperatorPrecedenceParsing ./parser 
+--- FAIL: TestOperatorPrecedenceParsing (0.00s)
+parser_test.go:359: expected="((a + b) + c)", got="(a + (b + c))" 
+parser_test.go:359: expected="((a + b) - c)", got="(a + (b - c))" 
+parser_test.go:359: expected="(((a + (b * c)) + (d / e)) - f)",\
+got="(a + ((b * c) + ((d / e) - f)))" 
+FAIL
+```
+这个让我们更加深入的了解到了`parseExpression`方法，如果你现在还不确定是否掌握了它是如何工作的，别担心，我也是这样的。将我们每一个解析过程跟踪打印出来，它将会对我们非常有帮助。在随书的本章的代码中我将下面的代码放在了`./parser/parse_tracing.go`中，这个我们从来没有见过，该文件中包含了两个定义的函数`trace`和`untrace`很好地帮助我们去理解解析器所做的工作。使用如下：
+```go 
+// parser/parser.go
+func (p *Parser) parseExpressionStatement() *ast.ExpressionStatement { 
+    defer untrace(trace("parseExpressionStatement"))
+// [...]
+}
+func (p *Parser) parseExpression(precedence int) ast.Expression { 
+    defer untrace(trace("parseExpression"))
+// [...]
+}
+func (p *Parser) parseIntegerLiteral() ast.Expression { 
+    defer untrace(trace("parseIntegerLiteral"))
+// [...]
+}
+func (p *Parser) parsePrefixExpression() ast.Expression { 
+    defer untrace(trace("parsePrefixExpression"))
+// [...]
+}
+func (p *Parser) parseInfixExpression(left ast.Expression) ast.Expression { 
+    defer untrace(trace("parseInfixExpression"))
+// [...]
+}
+```
+通过这个记录的声明，现在使用解析器的时候可以看到他是如何工作的，下面是我们在解析`-1*2+3`的时候的输出
+```
+$ go test -v -run TestOperatorPrecedenceParsing ./parser 
+=== RUN TestOperatorPrecedenceParsing
+BEGIN parseExpressionStatement
+    BEGIN parseExpression
+        BEGIN parsePrefixExpression
+            BEGIN parseExpression
+                BEGIN parseIntegerLiteral
+                END parseIntegerLiteral 
+            END parseExpression
+        END parsePrefixExpression 
+        BEGIN parseInfixExpression
+            BEGIN parseExpression
+                BEGIN parseIntegerLiteral
+                END parseIntegerLiteral 
+            END parseExpression
+        END parseInfixExpression 
+        BEGIN parseInfixExpression
+            BEGIN parseExpression
+                BEGIN parseIntegerLiteral
+                END parseIntegerLiteral 
+            END parseExpression
+        END parseInfixExpression 
+    END parseExpression
+END parseExpressionStatement
+--- PASS: TestOperatorPrecedenceParsing (0.00s) PASS
+ok monkey/parser 0.008s
+```
 <h2 id="ch03-extending-the-parser">3.8 拓展解析器</h2>
+在我们继续之前，我们需要拓展我们的解析器。首先我们需要清理和拓展我们的测试套件，我不会将所有的的改变列出来，但是我们展示一些小的帮助函数，以便让姿势更容易理解。
+
+我们已经有了`testIntegerLiteral`帮助，第二个函数`testIdentifier`可以帮助我们清理好多测试：
+```go
+// parser/parser_test.go
+func testIdentifier(t *testing.T, exp ast.Expression, value string) bool {
+	ident, ok := exp.(*ast.Identifier)
+	if !ok {
+		t.Errorf("exp not *ast.Identifier. got=%T", exp)
+		return false
+	}
+	if ident.Value != value {
+		t.Errorf("ident.Value not %s. got=%s", value, ident.Value)
+		return false
+	}
+	if ident.TokenLiteral() != value {
+		t.Errorf("ident.TokenLiteral not %s. got=%s", value, ident.TokenLiteral())
+		return false
+	}
+	return true
+}
+```
+最有趣的是使用`testIntegerLiteral`和`testIdentifier`可以构建很多泛化的帮助方法
+```go
+func testLiteralExpression(t *testing.T, exp ast.Expression, expected interface{}) bool {
+	switch v := expected.(type) {
+	case int:
+		return testIntegerLiteral(t, exp, int64(v))
+	case int64:
+		return testIntegerLiteral(t, exp, v)
+	case string:
+		return testIdentifier(t, exp, v)
+	}
+	t.Errorf("type of exp not handled. got=%T", exp)
+	return false
+}
+func testInfixExpression(t *testing.T, exp ast.Expression, left interface{},
+	operator string, right interface{}) bool {
+	opExp, ok := exp.(*ast.InfixExpression)
+	if !ok {
+		t.Errorf("exp is not ast.InfixExpression. got=%T(%s)", exp, exp)
+		return false
+	}
+	if !testLiteralExpression(t, opExp.Left, left) {
+		return false
+	}
+	if opExp.Operator != operator {
+		t.Errorf("exp.Operator is not '%s'. got=%q", operator, opExp.Operator)
+		return false
+	}
+	if !testLiteralExpression(t, opExp.Right, right) {
+		return false
+	}
+	return true
+}
+```
+有了这些替代，我们可以如下的方式编写测试代码：
+```go
+testInfixExpression(t, stmt.Expression, 5, "+", 10) 
+testInfixExpression(t, stmt.Expression, "alice", "*", "bob")
+```
+它将我们的测试解析器生成的抽象语法树更加容易了。
+
+**布尔字面值**
+
+还有一些东西需要我们的编程语言来时间以便在解析器和抽象语法书中使用，在Monkey中我们可以这样使用布尔型
+```
+true;
+false;
+let foobar = true;
+let barfoo = false;
+```
+正如标识符和整数字面值，它的抽象语法树表示也非常简单和短小：
+```go
+type Boolean struct {
+	Token token.Token
+	Value bool
+}
+func (b *Boolean) expressionNode()      {}
+func (b *Boolean) TokenLiteral() string { return b.Token.Literal }
+func (b *Boolean) String() string       { return b.Token.Literal }
+```
+`Value`字段可以保留`bool`的值，也就意味着我们可以保存`true`或者`fasle`(注意是Go语言中的布尔值)
+
+有了抽象语法树的节点，我们可以增加测试。 测试函数`TestBooleanExpression`和测试函数`TestIdentifierExpression`和`TestIntegerLiteralExpression`非常相像，在这里我就不展示了。 下面的测试足够指出了我们如何即实现解析布尔字面值解析。
+```
+$ go test ./parser
+--- FAIL: TestBooleanExpression (0.00s)
+parser_test.go:470: parser has 1 errors
+parser_test.go:472: parser error: "no prefix parse function for true found" FAIL
+FAIL monkey/parser 0.008s
+```
+当然，我们需要为`token.TRUE`和`token.FALSE`注册`prefixParseFn`
+```go
+// parser/parser.go
+func New(l *lexer.Lexer) *Parser { 
+// [...]
+    p.registerPrefix(token.TRUE, p.parseBoolean)
+    p.registerPrefix(token.FALSE, p.parseBoolean)
+// [...]
+}
+```
+`parseBoolean`方法正如想象中的一样：
+```go
+//parser/parser.go
+func (p *Parser) parseBoolean() ast.Expression {
+    return &ast.Boolean{Token: p.curToken, Value: p.curTokenIs(token.TRUE)}
+}
+```
+其中最有趣的部分是内联的`p.curTokenIs(token.TRUE)`方法的调用，但是它并不是真正有缺。只不过它不是很直接。换句话说，我们的解析器工作的很好，这也是`Pratt`方法的漂亮的地方，它非常容易去拓展。
+
+现在测试通过了
+```
+$ go test ./parser
+ok monkey/parser 0.006s
+```
+但是更有缺的地方时我们现在拓展几个测试用例来完成刚刚实现的布尔字面值，第一个后选择就是`TestOperatorPrecedenceParsing`，它使用了字符串比较机制
+```go
+//parser/parser_test.go
+func TestOperatorPrecedenceParsing(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+        //[...]
+		{"true", "true"},
+		{"false", "false"},
+		{"3>5==false", "((3 > 5) == false)"},
+		{"3<5==true", "((3 < 5) == true)"},
+		{"1+(2+3)+4", "((1 + (2 + 3)) + 4)"},
+		{"(5+5)*2", "((5 + 5) * 2)"},
+		{"2/(5+5)", "(2 / (5 + 5))"},
+		{"-(5+5)", "(-(5 + 5))"},
+	    //[...]
+}
+```
+通过`testBooleanLiteral`方法，我们可以拓展`testLiteralExpression`函数来测试布尔字面值。
+```go
+// parser/parser_test.go
+func testLiteralExpression(t *testing.T, exp ast.Expression, expected interface{}) bool {
+	switch v := expected.(type) {
+	//[...]
+	case bool:
+		return testBooleanLiteral(t, exp, v)
+	//[...]
+	}
+}
+func testBooleanLiteral(t *testing.T, exp ast.Expression, value bool) bool {
+	bo, ok := exp.(*ast.Boolean)
+	if !ok {
+		t.Errorf("exp not *ast.Boolean. got=%T", exp)
+		return false
+	}
+	if bo.Value != value {
+		t.Errorf("bo.Value not %t, got=%t", value, bo.Value)
+		return false
+	}
+	if bo.TokenLiteral() != fmt.Sprintf("%t", value) {
+		t.Errorf("bo.TokenLiteral not %t, got=%s",
+			value, bo.TokenLiteral())
+		return false
+	}
+	return true
+}
+```
+没有任何神奇的，只不过在`switch`语句中增加了一个`case`分支和新的帮助函数，在这个地方，我们也可以很容易拓展`TestParsingInfixExpressions`。
+```go
+// parser/parser_test.go
+func TestParsingInfixExpressions(t *testing.T) { 
+    infixTests := []struct {
+        input string 
+        leftValue interface{} 
+        operator string 
+        rightValue interface{}
+}{
+// [...]
+    {"true == true", true, "==", true}, 
+    {"true != false", true, "!=", false}, 
+    {"false == false", false, "==", false},
+}
+// [...]
+if !testLiteralExpression(t, exp.Left, tt.leftValue) { 
+    return
+}
+if !testLiteralExpression(t, exp.Right, tt.rightValue) { 
+    return
+}
+//[...]
+```
+同样`TestParsingPrefixExpressions`也很容易拓展，只需要测试表中增加新的入口：
+```go
+// parser/parser_test.go
+func TestParsingPrefixExpressions(t *testing.T) { 
+    prefixTests := []struct {
+        input string 
+        operator string 
+        value interface{}
+    }{
+    // [...]
+    {"!true;", "!", true},
+    {"!false;", "!", false}, }
+    // [...]
+}
+```
+我们实现了解析布尔型字面值并且拓展了我们的测试，它可以给我们更多的测试覆盖率和更好的工具。
+
+**分组表达式**
+
+接下来我们要做的事如何解析分组的表达式，当然，在Monkey中，我们可以通过添加括号来对表达式进行分组从而修改优先级，以便适应他们执行的环境。接下来看一个例子：
+```
+(5+5)*2
+```
+使用括号将`5+5`表达式分组，那么他们有更高的优先级。他们在抽象语法树中的的位置更深，导致后面额执行结果和数学表达式相同。
+
+或许你现在想：*该死的优先级怎么又来了，头都大了*， 如果你想跳过本章节，直接到最后。我建议别这么做！
+
+我们不打算为分组表达式编写单元测试，因为它们不是有抽象语法树节点构成。我们不需要改变我的抽象语法树以便正确解析分组表达式。我们要做的是拓展我们的`TestOperatorPrecedenceParsing`测试函数，来确保括号正确的将表达式分组，而且对抽象语法树的结果又影响。
+```go
+// parser/parser_test.go
+func TestOperatorPrecedenceParsing(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		//[...]
+		{"1+(2+3)+4", "((1 + (2 + 3)) + 4)"},
+		{"(5+5)*2", "((5 + 5) * 2)"},
+		{"2/(5+5)", "(2 / (5 + 5))"},
+		{"-(5+5)", "(-(5 + 5))"},
+        {"!(true==true)", "(!(true == true))"},
+        //[...]
+	}
+}
+```
+当然测试失败的：
+```
+$ go test ./parser
+--- FAIL: TestOperatorPrecedenceParsing (0.00s)
+    parser_test.go:531: parser has 3 errors
+    parser_test.go:533: parser error: "no prefix parse function for ( found" 
+    parser_test.go:533: parser error: "no prefix parse function for ) found" 
+    parser_test.go:533: parser error: "no prefix parse function for + found"
+FAIL
+FAIL monkey/parser 0.007s
+```
+下面是我们最烧脑的部分，为了让测试通过，我们需要增加如下代码:
+```go
+// parser/parser.go
+func New(l *lexer.Lexer) *Parser { 
+    // [...]
+    p.registerPrefix(token.LPAREN, p.parseGroupedExpression)
+    // [...]
+}
+func (p *Parser) parseGroupedExpression() ast.Expression { 
+    p.nextToken()
+    exp := p.parseExpression(LOWEST)
+    if !p.expectPeek(token.RPAREN) { 
+        return nil
+    }
+    return exp 
+}
+```
+是的，我们的测试通过，而且括号正如我们期望的那样，增加了被括号包含的测表达式的优先级。`token`类型关联函数的概念棒极了。
+
+**条件表达式**
+
+在Monkey语言中，我们可以使用`if`和`esle`语句，用法和其他编程语言一样的：
+```
+if (x > y) {
+    return x;
+}else{
+    return y;
+}
+```
+其中`else`还是可选的
+```
+if (x > y){
+    return x;
+}
+```
+上面的我们都很熟悉了，在Monkey中，`if-else-conditional`条件是表达式。那就意味着他们可以生成值，哪怕`if`表达式是最后执行的。我们甚至不需要在这里使用`return`语句。
+```
+let foobar = if (x>y) {x} else {y};
+```
+解释`if-else-conditional`结构是没有必要的，为了清除他们的命名，我们还是这样做了：
+```
+if (<condition>) <consequence> else <alternative>
+```
+使用方括号包含起来的`consequence`和`alternative`是语句块，语句块意味着他们是一系列语句（就跟Monkey中`programs`)。
+
+目前我们的所有工作都是成功的，所以至于`if-else-conditional`也不例外。
+
+下面是抽象语法树节点`ast.IfExpression`的定义：
+```go
+type IfExpression struct {
+	Token       token.Token
+	Condition   Expression
+	Consequence *BlockStatement
+	Alternative *BlockStatement
+}
+
+func (ie *IfExpression) expressionNode()      {}
+func (ie *IfExpression) TokenLiteral() string { return ie.Token.Literal }
+func (ie *IfExpression) String() string {
+	var out bytes.Buffer
+	out.WriteString("if")
+	out.WriteString(ie.Condition.String())
+	out.WriteString(" ")
+	out.WriteString(ie.Consequence.String())
+	if ie.Alternative != nil {
+		out.WriteString("else")
+		out.WriteString(ie.Alternative.String())
+	}
+	return out.String()
+}
+```
+我们的`*ast.IfExpression`实现了`ast.Expression`接口，并且有三个字段代表了`if-else-conditional`。`Condition`保存了`condition`，它可以是任何表达式。`Consequence`和`Alternative`分别指向了`consequence`和`alteranative`。它们引用了新类型`ast.BlockStatement`，正如以前，`consequence/alterantive`是`if-else-condition`照片那个的一系列声明。它也是我们`ast.BlockStatement`代表的内容。
+```go
+type BlockStatement struct {
+	Token      token.Token
+	Statements []Statement
+}
+
+func (bs *BlockStatement) statementNode()       {}
+func (bs *BlockStatement) TokenLiteral() string { return bs.Token.Literal }
+func (bs *BlockStatement) String() string {
+	var out bytes.Buffer
+	for _, s := range bs.Statements {
+		out.WriteString(s.String())
+	}
+	return out.String()
+}
+```
+下一步就是测试，我们现在已经知道如何做了，测试如下：
+```go
+func TestIfExpression(t *testing.T) {
+	input := `if(x<y){x}`
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+	if len(program.Statements) != 1 {
+		t.Fatalf("program.Body does not contain %d statements. got=%d\n",
+			1, len(program.Statements))
+	}
+	stmt, ok := program.Statements[0].(*ast.ExpressionStatement)
+	if !ok {
+		t.Fatalf("program.Statements[0] is not ast.ExpressionStatement. got=%T",
+			program.Statements[0])
+	}
+	exp, ok := stmt.Expression.(*ast.IfExpression)
+	if !ok {
+		t.Fatalf("stmt.Expression is not ast.IfExpression. got=%T",
+			stmt.Expression)
+	}
+	if !testInfixExpression(t, exp.Condition, "x", "<", "y") {
+		return
+	}
+	if len(exp.Consequence.Statements) != 1 {
+		t.Errorf("consequence is not 1 statements. got=%d\n",
+			len(exp.Consequence.Statements))
+	}
+	consequence, ok := exp.Consequence.Statements[0].(*ast.ExpressionStatement)
+	if !ok {
+		t.Fatalf("Statements[0] is not ast.ExpressionStatement. got=%T",
+			exp.Consequence.Statements[0])
+	}
+	if !testIdentifier(t, consequence.Expression, "x") {
+		return
+	}
+	if exp.Alternative != nil {
+		t.Errorf("exp.Alternative.Statement was not nil. got=%+v", exp.Alternative)
+	}
+}
+```
+我也增加了`TestIfElseExpression`测试函数，然后使用下面的测试输入
+```
+if ( x< y ) { x } else { y }
+```
+在`TestIfElseExpression`中有额外的判断`Alternative`字段部分。所有对于`*ast.IfExpression`节点的结果判断使用了帮助函数`testInfixExpression`和`testIdentifer`。这样我们可以专注于条件表达式本身，来确保我们的解析器剩下的部分正确集成起来。
+
+所有测试都以错误消息返回，我们对此已经非常熟悉了
+```
+$ go test ./parser
+--- FAIL: TestIfExpression (0.00s)
+    parser_test.go:659: parser has 3 errors
+    parser_test.go:661: parser error: "no prefix parse function for IF found" 
+    parser_test.go:661: parser error: "no prefix parse function for { found" 
+    parser_test.go:661: parser error: "no prefix parse function for } found"
+--- FAIL: TestIfElseExpression (0.00s)
+    parser_test.go:659: parser has 6 errors
+    parser_test.go:661: parser error: "no prefix parse function for IF found" 
+    parser_test.go:661: parser error: "no prefix parse function for { found" 
+    parser_test.go:661: parser error: "no prefix parse function for } found" 
+    parser_test.go:661: parser error: "no prefix parse function for ELSE found" 
+    parser_test.go:661: parser error: "no prefix parse function for { found" 
+    parser_test.go:661: parser error: "no prefix parse function for } found"
+FAIL
+FAIL monkey/parser 0.007s
+```
+首先我们开始第一个失败测试`TestifExpression`， 显然我们需要为`Token.IF`注册第`prefixParseFn`。
+```go
+// parser/parser.go
+func New(l *lexer.Lexer) *Parser { 
+// [...]
+    p.registerPrefix(token.IF, p.parseIfExpression)
+// [...]
+}
+func (p *Parser) parseIfExpression() ast.Expression { 
+    expression := &ast.IfExpression{Token: p.curToken}
+    if !p.expectPeek(token.LPAREN) { 
+        return nil
+    }
+    p.nextToken()
+    expression.Condition = p.parseExpression(LOWEST)
+    if !p.expectPeek(token.RPAREN) { 
+        return nil
+    }
+    if !p.expectPeek(token.LBRACE) { 
+        return nil
+    }
+    expression.Consequence = p.parseBlockStatement()
+    return expression
+}
+```
+在这个解析函数中，我们频繁调用`expectPeek`，这不仅仅是必须的，而且是有意义的。`expectPeek`如果期望的`token`不符合预期，那么它将会增加给解析增加一个错误，如果满足期望，它将会前进一个`token`，这的确是我们需要的，在这之后就是`{`，它标志着语句块的开始。
+
+这个方法遵循我们我们的解析函数协议：`token`前进至`parseBlockStatement`开始的地方，当前`p.curToken`位于`{`处。下面是`parseBlockStatement`解析函数：
+```go
+// parser/parser.go
+func (p *Parser) parseBlockStatement() *ast.BlockStatement {
+	block := &ast.BlockStatement{Token: p.curToken}
+	block.Statements = []ast.Statement{}
+	p.nextToken()
+	for !p.curTokenIs(token.RBRACE) {
+		stmt := p.parseStatement()
+		if stmt != nil {
+			block.Statements = append(block.Statements, stmt)
+		}
+		p.nextToken()
+	}
+	return block
+}
+```
+`parseBlockStatement`调用`parseStatement`方法一直到遇到`}`，它标记着语句块的结束。它上去和我们的顶层`parseProgram`方法非常像，在哪里我们不停地调用`parseStatement`方法，知道遇到结束`token`，在`ParseProgram`中，该结束`token`是`token.EOF`。这循环的重复并没有没有错误的影响，所以我们保留它们并且注意它们的测试用例：
+```
+$ go test ./parser
+--- FAIL: TestIfElseExpression (0.00s)
+    parser_test.go:659: parser has 3 errors
+    parser_test.go:661: parser error: "no prefix parse function for ELSE found" 
+    parser_test.go:661: parser error: "no prefix parse function for { found" 
+    parser_test.go:661: parser error: "no prefix parse function for } found"
+FAIL
+FAIL monkey/parser 0.007s
+```
+`TestIfExpression`测试通过，但是`TestIfElseExpression`并没有通过。现在为了支持`if-else-condition`中的`else`分支，我们需要检查该分支是否存在，以便我们能够在`else`分支解析它们。
+```go
+// parser/parser.go
+func (p *Parser) parseIfExpression() ast.Expression {
+//[...]
+	expression.Consequence = p.parseBlockStatement()
+	if p.peekTokenIs(token.ELSE) {
+		p.nextToken()
+		if !p.expectPeek(token.LBRACE) {
+			return nil
+		}
+		expression.Alternative = p.parseBlockStatement()
+	}
+	return expression
+}
+```
+这就是全部了，这个方法允许可选的`else`分支但是没有增加错误，在我们解析`consequence-block-statement`后，我们检查是否出现`token.ELSE`，如果存在我们跳过两个`token`，第一次调用`nextToken`的原因我们已经知道`p.peekToken`是`else`，然后我们调用`expectPeek`的原因是下一个`token`是一个语句块的开始部分`{`，否则这个程序是无效的。
+
+是的，解析的过程非常容易出现错误，非常容易忘了前进`token`或者错误地调用`nextToken`方法。通过严格的协议表明每一个解析函数怎么去前进`token`很好的帮助我们。幸运的是我们用很好的测试用例来保证我们知道每一步工作是怎样的：
+```
+$ go test ./parser
+ok monkey/parser 0.007s
+```
+
+**函数字面**
+
+你已经注意到`parseIfExpression`方法中我们增加了很多代码，这个比任何一个`prefixParseFn`和`infixParseFn`方法还要多。因为我们针对不同的`token`和表达式类型有不得不做很多工作。接下来我们要做的的工作难度和之前的差不多，而且也涉及到更多的`token`类型。我们将要解析函数字面。
+
+在Monkey中，通过函数字面来定义函数，包含了函数的参数和函数所做的内容。函数看上去是这样的：
+```
+fn(x, y) {
+    return x+y;
+}
+```
+它开始于关键字`fn`，紧接着是参数列表，然后是语句块，它就是函数体，函数在调用的时候，函数体将会被执行。抽象结构如下
+```
+fn <parameters><block statement>
+```
+我们已经知道语句快了，也只到如何解析它们。参数列表之前没有遇到过，但是解析它们并不困难。它们仅仅是一系列由逗号隔开的标识符，并且有括号包含起来：
+```
+(<parameter one>, <parameter two>, <parameter three>, ...)
+```
+这个列表可以是空的
+```
+fn(){
+    return foobar + barfoo;
+}
+```
+它们就是函数字面，那么他们属于那种抽象语法树节点类型呢？当然是表达式。将函数字面放到任何表达式位置都是有效的。举个例子，下面是将函数字面作为`let`语句的表达式部分：
+```
+let myFunction = fn(x, y) { return x + y; }
+```
+下面是将函数字面作为`return`语句的表达式部分，而且它还在其他函数内部：
+```
+fn(){
+    return fn(x, y) { return x > y; }
+}
+```
+也可以将一个函数字面作为其他函数调用的参数
+```
+myFunc(x, y, fn(x, y) {return x > y;});
+```
+听上去有点复杂，但是一点也不。其中最棒的是我么你的解析器一旦作为表达式解析成功，剩下的工作它将正确解析成函数。
+
+我们已经知道函数字面值有两个主要的部分：参数列表和函数体的语句块，在定义抽象语法树节点的时候要注意这一点。
+
+```go
+type FunctionLiteral struct {
+	Token      token.Token
+	Parameters []*Identifier
+	Body       *BlockStatement
+}
+
+func (fl *FunctionLiteral) expressionNode()      {}
+func (fl *FunctionLiteral) TokenLiteral() string { return fl.Token.Literal }
+func (fl *FunctionLiteral) String() string {
+	var out bytes.Buffer
+	params := make([]string, 0)
+	for _, p := range fl.Parameters {
+		params = append(params, p.String())
+	}
+	out.WriteString(fl.TokenLiteral())
+	out.WriteString("(")
+	out.WriteString(strings.Join(params, ", "))
+	out.WriteString(") ")
+	out.WriteString(fl.Body.String())
+	return out.String()
+
+}
+```
+`Parameters`字段是`*ast.Identfiers`的切片，`Body`字段是`*ast.BlockStatement`，这个我们之前看过。
+
+下面是测试，在这里我们也使用了`testLiteralExpression`和`testInfixExpression`帮助函数：
+
+```go
+func TestFunctionLiteralParsing(t *testing.T) {
+	input := `fn(x,y){x+y;}`
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+	if len(program.Statements) != 1 {
+		t.Fatalf("program.Body does not coantin %d statement. got=%d",
+			1, len(program.Statements))
+	}
+	stmt, ok := program.Statements[0].(*ast.ExpressionStatement)
+	if !ok {
+		t.Fatalf("program.Statements[0] is not ast.ExpressionStatement. got=%T",
+			program.Statements[0])
+	}
+	function, ok := stmt.Expression.(*ast.FunctionLiteral)
+	if !ok {
+		t.Fatalf("stmt.Expression is not ast.FunctionLiteral. got=%T",
+			stmt.Expression)
+	}
+	if len(function.Parameters) != 2 {
+		t.Fatalf("stmt.Expression is not ast.FunctionLiteral. got=%T",
+			stmt.Expression)
+	}
+	testLiteralExpression(t, function.Parameters[0], "x")
+	testLiteralExpression(t, function.Parameters[1], "y")
+	if len(function.Body.Statements) != 1 {
+		t.Fatalf("function.Body.Statements has not 1 Statements. got=%d\n",
+			len(function.Body.Statements))
+	}
+	bodyStmt, ok := function.Body.Statements[0].(*ast.ExpressionStatement)
+	if !ok {
+		t.Fatalf("function body stmt is not ast.ExpressionStatement. got=%T",
+			function.Body.Statements[0])
+	}
+	testInfixExpression(t, bodyStmt.Expression, "x", "+", "y")
+}
+```
+测试主要分为三个主要部分：检查`*ast.FunctionLiteral`是否存在；检查参数列表是否正确；确保函数体包含正确的语句。最后一部分不是严格必须的，我们我们已经在`IfExpression`中已经测试用语句块，但是我们在这里重复之前工作也是无关紧要。
+
+仅仅定义了`ast.FunctionLiteral`并没有改变我们的解析器，测试失败了
+```
+
+$ go test ./parser
+--- FAIL: TestFunctionLiteralParsing (0.00s)
+    parser_test.go:755: parser has 6 errors
+    parser_test.go:757: parser error: "no prefix parse function for FUNCTION found" 
+    parser_test.go:757: parser error: "expected next token to be ), got , instead" 
+    parser_test.go:757: parser error: "no prefix parse function for , found" 
+    parser_test.go:757: parser error: "no prefix parse function for ) found" 
+    parser_test.go:757: parser error: "no prefix parse function for { found" 
+    parser_test.go:757: parser error: "no prefix parse function for } found"
+FAIL
+FAIL monkey/parser 0.007s
+```
+显然我们需要为`token.FUNCTION`注册新的`prefixParseFn`。
+```go
+// parser/parsr.go
+func New(l *lexer.Lexer) *Parser { 
+// [...]
+    p.registerPrefix(token.FUNCTION, p.parseFunctionLiteral)
+// [...]
+}
+func (p *Parser) parseFunctionLiteral() ast.Expression { 
+    lit := &ast.FunctionLiteral{Token: p.curToken}
+    if !p.expectPeek(token.LPAREN) { 
+        return nil
+    }
+    lit.Parameters = p.parseFunctionParameters()
+    if !p.expectPeek(token.LBRACE) { 
+        return nil
+    }
+    lit.Body = p.parseBlockStatement()
+    return lit 
+}
+```
+使用的`parseFunctionParameter`方法看上去是这样的
+```go
+//parser/parser.go
+func (p *Parser) parseFunctionParameters() []*ast.Identifier {
+	identifiers := make([]*ast.Identifier, 0)
+	if p.peekTokenIs(token.RPAREN) {
+		p.nextToken()
+		return identifiers
+	}
+	p.nextToken()
+	ident := &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
+	identifiers = append(identifiers, ident)
+
+	for p.peekTokenIs(token.COMMA) {
+		p.nextToken()
+		p.nextToken()
+		ident := &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
+		identifiers = append(identifiers, ident)
+	}
+	if !p.expectPeek(token.RPAREN) {
+		return nil
+	}
+	return identifiers
+}
+```
+`parseFunctionParameter`核心的部分是构建参数切片通过不停地从逗号分隔的列表中创建标识符。这也表面如果列表为空，将会退出。
+
+这个方法值得我们在编写一系列测试来检查边界用例，一个空的参数列表，只有一个参数和多个参数不同情况。
+```go
+func TestFunctionParameterParsing(t *testing.T) {
+	tests := []struct {
+		input            string
+		expectedParameer []string
+	}{
+		{"fn(){}", []string{}},
+		{"fn(x){}", []string{"x"}},
+		{"fn(x,y){}", []string{"x", "y"}},
+	}
+	for _, tt := range tests {
+		l := lexer.New(tt.input)
+		p := New(l)
+		program := p.ParseProgram()
+		checkParserErrors(t, p)
+		stmt := program.Statements[0].(*ast.ExpressionStatement)
+		function := stmt.Expression.(*ast.FunctionLiteral)
+		if len(function.Parameters) != len(tt.expectedParameer) {
+			t.Errorf("length parameters wrong. want %d, got=%d\n",
+				len(tt.expectedParameer), len(function.Parameters))
+		}
+		for i, ident := range tt.expectedParameer {
+			testLiteralExpression(t, function.Parameters[i], ident)
+		}
+	}
+}
+```
+现在测试通过了
+```
+$ go test ./parser
+ok monkey/parser 0.007s
+```
+现在我们已经正确解析了函数字面。
+
+
+**调用表达式**
+
+既然我们知道如何解析函数字面，下一步就应该解析函数调用：调用表达式。下面是结构：
+```
+<expression>(<comma separated expression>)
+```
+下面是调用表达式正常使用
+```
+add(2, 3)
+```
+如果你认为`add`是标识符，标识符就是表达式，参数`2`和`3`都是表达式，参数就是一系列表达式。
+```
+add(2+2, 3*3*3)
+```
+这个同样也是有效的，第一个参数是一个中缀表达式`2+2`，第二个是`3*3*3`。现在让我们看看这里函数调用，这个例子中，函数被绑定到标识符`add`，这个标识符在执行的时候返回该函数，这也就意味着我们可以直接跳过标识符，替换掉`add`函数字面。
+```
+fn(x, y){x+y; }(2, 3)
+```
+这也是有效的，我么也可以使用函数字面值作为参数
+```
+callsFunction(2, 3, fn(x, y) { x + y; });
+```
+所以再一次看看该结构
+```
+<expression>(<comma separated expressions>)
+```
+调用表达式有个一个表达式（执行的时候返回一个函数）和一系列表达式，它们是函数调用的是否的参数。所以抽象语法树的节点看上去是这样的
+```go
+// ast/ast.go
+type CallExpression struct {
+	Token     token.Token
+	Function  Expression
+	Arguments []Expression
+}
+
+func (ce *CallExpression) expressionNode()      {}
+func (ce *CallExpression) TokenLiteral() string { return ce.Token.Literal }
+func (ce *CallExpression) String() string {
+	var out bytes.Buffer
+	args := make([]string, 0)
+	for _, a := range ce.Arguments {
+		args = append(args, a.String())
+	}
+	out.WriteString(ce.Function.String())
+	out.WriteString("(")
+	out.WriteString(strings.Join(args, ", "))
+	out.WriteString(")")
+	return out.String()
+}
+
+type StringLiteral struct {
+	Token token.Token
+	Value string
+}
+```
+测试也是同样如此，它对`*ast.CallExpression`的结构进行判断
+```go
+// parser/parser_test.go
+func TestCallExpressionParsing(t *testing.T) {
+	input := `add(1, 2*3, 4+5)`
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+	if len(program.Statements) != 1 {
+		t.Fatalf("program.Statements doest not contain %d statements. got=%d\n",
+			1, len(program.Statements))
+	}
+	stmt, ok := program.Statements[0].(*ast.ExpressionStatement)
+	if !ok {
+		t.Fatalf("stmt is not ast.ExpressionStatement. got=%T",
+			program.Statements[0])
+	}
+	exp, ok := stmt.Expression.(*ast.CallExpression)
+	if !ok {
+		t.Fatalf("stmt.Expression is not ast.CallExpression. got=%T",
+			stmt.Expression)
+	}
+	if !testIdentifier(t, exp.Function, "add") {
+		return
+	}
+	if len(exp.Arguments) != 3 {
+		t.Fatalf("wrong length of arguments. got=%d", len(exp.Arguments))
+	}
+	testLiteralExpression(t, exp.Arguments[0], 1)
+	testInfixExpression(t, exp.Arguments[1], 2, "*", 3)
+	testInfixExpression(t, exp.Arguments[2], 4, "+", 5)
+}
+```
+通过调用函数字面值和参数解析很好的帮我们将参数解析测试部分分开。通过测试确保我们每个临界测试正确工作。我也增加了`TestCallExpressionParameterParsing`测试方法在本章的代码中。
+
+到目前为止，测试还是失败的，我们得到了错误消息
+```
+$ go test ./parser
+--- FAIL: TestCallExpressionParsing (0.00s)
+    parser_test.go:853: parser has 4 errors
+    parser_test.go:855: parser error: "expected next token to be ), got , instead" 
+    parser_test.go:855: parser error: "no prefix parse function for , found" 
+    parser_test.go:855: parser error: "no prefix parse function for , found" 
+    parser_test.go:855: parser error: "no prefix parse function for ) found"
+FAIL
+FAIL monkey/parser 0.007s
+```
+这个错误消息并没有很多信息，为什么没有错误消息提示我们为调用表达式注册`prefixParseFn`?因为我们在调用表达式中并没有增加新的`token`，那我们接下来怎么算呢？举个例子看一看
+```
+add(2, 3);
+```
+`add`是由`prefixParseFn`解析的标识符，在标识符之后是`token.LPAREN`，在标识符和参数列表中间，在中缀位置。是的我们有需要为`token.LPAREN`注册`infixParseFn`，这种方式我们解析为函数的比到时是，然后检查关联`token.LPAREN`的`infixParseFn`，调用该函数和进行解析的参数表达式一起使用。
+```go
+// parser/parser.go
+func New(l *lexer.Lexer) *Parser { 
+    // [...]
+    p.registerInfix(token.LPAREN, p.parseCallExpression)
+    // [...]
+}
+// parse function call
+func (p *Parser) parseCallExpression(function ast.Expression) ast.Expression {
+	exp := &ast.CallExpression{Token: p.curToken, Function: function}
+	exp.Arguments = p.parseExpressionList(token.RPAREN)
+	return exp
+}
+
+// parse hash literal
+func (p *Parser) parseHashLiteral() ast.Expression {
+	hash := &ast.HashLiteral{Token: p.curToken}
+	hash.Pairs = make(map[ast.Expression]ast.Expression)
+	for !p.peekTokenIs(token.RBRACE) {
+		p.nextToken()
+		key := p.parseExpression(LOWEST)
+		if !p.expectPeek(token.COLON) {
+			return nil
+		}
+		p.nextToken()
+		value := p.parseExpression(LOWEST)
+		hash.Pairs[key] = value
+		if !p.peekTokenIs(token.RBRACE) && !p.expectPeek(token.COMMA) {
+			return nil
+		}
+	}
+	if !p.expectPeek(token.RBRACE) {
+		return nil
+	}
+	return hash
+}
+```
+`parseCallExpression`接受一个已经解析的`function`作为参数，使用它构建一个`*ast.CallExpression`节点。为了解析参数列表，我们调用`parseCallArguments`, 它看上去和`parseFunctionParameters`非常类似，除了它看上去更加通用，因为它返回`ast.Expression`切片而不是`*ast.Identifier`.
+
+下面的测试错误我们之前看过，我们还没有注册新的`infixParseFn`
+```
+$ go test ./parser
+--- FAIL: TestCallExpressionParsing (0.00s)
+    parser_test.go:853: parser has 4 errors
+    parser_test.go:855: parser error: "expected next token to be ), got , instead" 
+    parser_test.go:855: parser error: "no prefix parse function for , found" 
+    parser_test.go:855: parser error: "no prefix parse function for , found" 
+    parser_test.go:855: parser error: "no prefix parse function for ) found"
+FAIL
+FAIL monkey/parser 0.007s
+```
+原因是在于`(`在`add(1, 2)`中，作为中缀操作符，但是我们我们还没有赋予优先级。它还没有右结合性。所以`parseExpression`不会返回我们期望的结果。但是调用表达式拥有最高的级别的优先级，所以现在修正我们的优先级表非常重要：
+```go
+// parser/parser.go
+var precedences = map[token.TokenType]int{ 
+    // [...]
+token.LPAREN: CALL, 
+}
+```
+为了确保我们额调用表达式拥有最高的优先级，我们拓展我们的`TestOperatorPrecedenceParsing`测试函数
+```go
+//parser/parser_test.go
+func TestOperatorPrecedenceParsing(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		//[...]
+		{"a + add(b*c)+d", "((a + add((b * c))) + d)"},
+		{"a*[1,2,3,4][b*c]*d", "((a * ([1, 2, 3, 4][(b * c)])) * d)"},
+    }
+}
+//[...]
+}
+```
+现在再一次运行测试，我们可以看到它们都通过了
+```
+$ go test ./parser
+ok monkey/parser 0.008s
+```
+是的，所有的测试都通过了，好消息是我们已经做完了基本解析器的工作。在本书的最后我们还会再回来的。现在抽象语法树全部定义好，解析器也能正确工作。是时候将我们的话题转移到执行部分。
+
+在做之前，染我么移除先前TODO的内容和拓展我们的REPL以便集成到解析器中。
+
+**移除TODO**
+在我们编写解析`let`和`return`语句的时候，我们跳过了解析表达式部分：
+```go
+func (p *Parser) parseLetStatement() *ast.LetStatement {
+	stmt := &ast.LetStatement{Token: p.curToken}
+	if !p.expectPeek(token.IDENT) {
+		return nil
+	}
+	stmt.Name = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
+	if !p.expectPeek(token.ASSIGN) {
+		return nil
+	}
+    //TODO: We're skipping the expression until we
+    // encounter a semicolon
+	for !p.curTokenIs(token.SEMICOLON) {
+		p.nextToken()
+	}
+	return stmt
+}
+```
+同样的`TODO`也出现在`parseRetrunStatement`, 是时候清除它们了。首先，我们需要拓展我们已经存在的测试来确保我们正确解析了`let`或者`return`语句中的表达式部分。我们使用帮助函数（这样不会转移我们注意力）和不同的表达式类型，这样我们知道`parseExpression`被正确集成了。
+
+下面是`TestLetStatement`函数看上去的样子：
+```go
+func TestLetStatements(t *testing.T) {
+	tests := []struct {
+		input              string
+		expectedIdentifier string
+		expectedValue      interface{}
+	}{
+		{"let x =5;", "x", 5},
+		{"let z =1.3;", "z", 1.3},
+		{"let y = true;", "y", true},
+		{"let foobar=y;", "foobar", "y"},
+	}
+	for _, tt := range tests {
+		l := lexer.New(tt.input)
+		p := New(l)
+		program := p.ParseProgram()
+		checkParserErrors(t, p)
+		if len(program.Statements) != 1 {
+			t.Fatalf("program.Statements does not contain 1 statements. got=%d",
+				len(program.Statements))
+		}
+		stmt := program.Statements[0]
+		if !testLetStatement(t, stmt, tt.expectedIdentifier) {
+			return
+		}
+		val := stmt.(*ast.LetStatement).Value
+		if !testLiteralExpression(t, val, tt.expectedValue) {
+			return
+		}
+	}
+}
+```
+在`TestReturnStatement`也有同样的需求，修正测试非常平常了，我们之前做了好多这样的工作。我们仅仅需要关注在`parseReturnStatement`和`parseLetStatement`中的`parseExpression`。而且我们主需要关注可选的分号，这个我们之间的`parseExpressionStatement`中已经知道了。新版的`parseReturnStatement`和`parseLetStatement`看上去如下
+```go
+func (p *Parser) parseLetStatement() *ast.LetStatement {
+	stmt := &ast.LetStatement{Token: p.curToken}
+	if !p.expectPeek(token.IDENT) {
+		return nil
+	}
+	stmt.Name = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
+	if !p.expectPeek(token.ASSIGN) {
+		return nil
+	}
+	p.nextToken()
+	stmt.Value = p.parseExpression(LOWEST)
+	for !p.curTokenIs(token.SEMICOLON) {
+		p.nextToken()
+	}
+	return stmt
+}
+
+// parse RETURN Statement
+func (p *Parser) parseReturnStatement() *ast.ReturnStatement {
+	stmt := &ast.ReturnStatement{Token: p.curToken}
+	p.nextToken()
+	stmt.ReturnValue = p.parseExpression(LOWEST)
+	for !p.curTokenIs(token.SEMICOLON) {
+		p.nextToken()
+	}
+	return stmt
+}
+```
+现在所有的TODO都移除了。
 <h2 id="ch03-read-parse-print-loop">3.9 REPL</h2>
+到目前为止，我们的REPL应该叫做`RLPL`(Reading-Lex-Print-Loop)。我们还不知道如何去执行代码，如何用`evaluate`去代替`lex`仍然还没有解决问题，但是现在我们能够确定的是解析。现在是时候用`parse`代替`lex`来构建`RPPL`。
+```go
+// repl/repl.go
+func Start(in io.Reader, out io.Writer) { 
+    scanner := bufio.NewScanner(in)
+    for {
+        fmt.Printf(PROMPT) 
+        scanned := scanner.Scan() 
+        if !scanned {
+            return
+        }
+        line := scanner.Text() 
+        l := lexer.New(line) 
+        p := parser.New(l)
+        program := p.ParseProgram() 
+        if len(p.Errors()) != 0 {
+            printParserErrors(out, p.Errors())
+            continue
+        }
+        io.WriteString(out, program.String())
+        io.WriteString(out, "\n") }
+    }
+    func printParserErrors(out io.Writer, errors []string) { 
+        for _, msg := range errors {
+            io.WriteString(out, "\t"+msg+"\n") 
+        }
+    }
+}
+```
+现在我们拓展我们解析的循环部分，对输入到`REPL`中的每一行进行解析。输出的结果是解析出来的`*ast.Program`，然后调用`String()`方法来打印输出，它递归地调用每一语句中的`String`方法。现在我们可以在命令行中使用解析器。
+```
+$ go run main.go
+Hello mrnugget! This is the Monkey programming language! Feel free to type in commands
+>> let x = 1 * 2 * 3 * 4 * 5
+let x = ((((1 * 2) * 3) * 4) * 5);
+>> x * y / 2 + 3 * 8 - 123
+((((x * y) / 2) + (3 * 8)) - 123)
+>> true == false
+(true == false)
+>>
+```
+棒极了，除了调用`String`方法，我们可以调用任何抽象语法树代表字符串类型。我们可以增加`PrettyPrint`方法来输出抽象语法树的节点和内部孩子节点。
 
+但是我们的`RPPL`还有一个巨大的缺陷：当遇到的错误的时候：
+```
+$ go run main.go
+Hello mrnugget! This is the Monkey programming language! Feel free to type in commands
+>> let x 12 * 3;
+expected next token to be =, got INT instead
+>>
+```
+这不是一个很好的错误消息，我的意思它完成了该完成的工作，但是不够友好。我们的Monkey语言值得更好的方式。下面有很好的`printParserError`函数，增加我们的的用户体验：
+```go
+// repl/repl.go
+func printParserErrors(out io.Writer, errors []string) { 
+    io.WriteString(out, "Woops! We ran into some monkey business here!\n") 
+    io.WriteString(out, " parser errors:\n")
+        for _, msg := range errors { io.WriteString(out, "\t"+msg+"\n")
+    } 
+}
+```
+现在好多了，当我们遇到任何解析错误，我们得到详细的错误信息
+```
+$ go run main.go
+Hello mrnugget! This is the Monkey programming language! Feel free to type in commands
+>> let x 12 * 3
+Woops! We ran into some monkey business here! parser errors:
+expected next token to be =, got INT instead
+>>
+```
 
-<h1 id="ch04-Evaluation">4 计算</h1>
+<h1 id="ch04-Evaluation">4 执行</h1>
 
 <h2 id="ch04-giving-meaning-to-symbols">4.1 符号赋值</h2>
 
@@ -361,8 +3894,8 @@ add(one(), two())
 
 或许你非常怀疑我告诉你写一个解析器非常好玩，但是请相信我，这事最重要的部分，在这部分Monkey编程语言将会变得有生命力起来，尤其是源代码变得运动起来，仿佛开始呼吸一样。
 
-<h2 id="ch04-strategies-of-evaluation">4.2 计算策略</h2>
-计算这一部分也是实现解释器过程中变化最多的部分，无论哪一种语言的实现。当计算源代码的时候，有很多不同的策略可以供选择。在本书简单介绍解释器架构的时候，我已经提示到这一点，现在我们手上已经有了抽象语法树（AST），现在问题来了，接下来我们需要做些什么，如何去计算这一棵树？我们接下来看看不同的观点。
+<h2 id="ch04-strategies-of-evaluation">4.2 执行策略</h2>
+执行这一部分也是实现解释器过程中变化最多的部分，无论哪一种语言的实现。当计算源代码的时候，有很多不同的策略可以供选择。在本书简单介绍解释器架构的时候，我已经提示到这一点，现在我们手上已经有了抽象语法树（AST），现在问题来了，接下来我们需要做些什么，如何去计算这一棵树？我们接下来看看不同的观点。
 
 在开始之前，值得注意的是解释器和编译器的界限是非常模糊的。常常来讲，解释器通常不离开可执行的环境（与此相关，编译器则脱离可执行环境）它并没有哪些现实中高优化的编程语言那么快。
 
@@ -4335,7 +7868,7 @@ Feel free to type in commands
 Hello world!
 null
 ```
-<h1 id="ch06-resource">6 资源</h1>
+<h1 id="ch06-resources">6 资源</h1>
 
 **书籍**
 
