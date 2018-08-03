@@ -5,7 +5,7 @@
 - [gaufung](https://github.com/gaufung)
 
 - [Jehu Lu](https://github.com/lwhile)
-  
+
 **目录**
 
 - [1 前言](#ch01-introduction)
@@ -7932,3 +7932,5 @@ me@thorstenball.com
 如果发现翻译错误或者更改，也同样给我([gaufung](https://github.com/gaufung))发邮件：
 
 gaufung@outlook.com
+
+或者登陆译者个人网站: [https://gaufung.com](https://gaufung.com)
