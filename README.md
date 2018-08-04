@@ -147,5 +147,5 @@ To make `monkey` interpreter language to be more powerfull, it is deserved impro
 - [x] float type
 - [x] unicode literal
 - [x] loop branch
-- [ ] translate into Chinese
+- [x] translate into Chinese
 - [ ] ... 
