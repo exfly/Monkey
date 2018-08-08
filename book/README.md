@@ -1,3 +1,3 @@
-⚠️ 🚫 Unfortunely， I don't get author's copyright about the content of this book (Write An Interpreter in Go) after I emailed him. Meanwhile, his code in the book, as well as my extension is under MIT license. If any publisher wants to buy the rights, I would like to be middleman。 
+⚠️ 🚫 Unfortunately I don't get author's copyright about the content of this book (Write An Interpreter in Go) after emailing him. However, his code with the book, as well as my extension is under MIT license. If any press wants to buy the rights, I would like to be middleman。
 
-Don't be depressed, I will take down my total comprehension of this book chapter by chapter, and post in my personal blog website [https://gaufung.com](https://gaufung.com). If you interested in the detail, please subsrcibe my blog. 
+Don't be depressed, I will take down my total comprehension of this book chapter by chapter, and post on my personal blog website [https://gaufung.com](https://gaufung.com). If you are interested in the detail, please subsrcibe my blog. 
