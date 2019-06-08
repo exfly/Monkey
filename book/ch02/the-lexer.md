@@ -180,3 +180,118 @@ func isLetter(ch byte) bool {
     return 'a' <= ch && ch <= 'z' || 'A' <= ch && ch <= 'Z' || ch == '_'
 }
 ```
+
+我们为 `switch` 语句增加了一个默认分支，因此只要 `l.ch` 是识别出的字符之一，我们可以检查是否为标识符。同样我们可以添加 `token.ILLEGAL` 类型。到目前为止，当我们不知道如何处理当前字符，一律声明为 `token.ILLEGAL`。
+
+辅助函数 `isLetter` 检查字符是否为一个字母。听上去很简单，但是要注意的是这个函数对我们解析器的功能有显著的影响。正如这上面的代码中，我们检查了 `ch == '_'`，意味着我们将 `_` 设置为视为字母，并且允许出现在标识符和关键字中。这也就是说明了 `foo_bar` 也可以作为变量名，其他语言甚至允许 `!` 和 `?` 作为标识符，如果你想增加支持其他字符为标识符，对这个函数做出修改。
+
+`readIdentifier()` 的功能正如名字所描述的，其读取一个标识符并更新词法分析器的读取位置，直到遇到一个非字母的字符。
+
+在 `switch` 语句的默认分支中，使用 `readIndentifer` 读到的是当前 `token` 中的 `Literal` 字段，那么 `Type` 呢？ 目前我们已经读取了像 `let`, `fn` 或者 `foobar`，除了语言的关键字，我们还需要知道用户定义的标识符类型。因此我们需要知道一个函数来判断返回 `token` 的 `TokenType` 字段。
+
+```go
+var keywords = map[string]TokenType{
+    "fn":     FUNCTION,
+    "let":    LET
+}
+
+// LookupIdentifier used to determinate whether identifier is keyword nor not
+func LookupIdentifier(identifier string) TokenType {
+    if tok, ok := keywords[identifier]; ok {
+        return tok
+    }
+    return IDENT
+}
+```
+
+`LookupIdentifier` 函数检查标识符是否为给定的关键字，如果是，则返回关键字常量 `TokenType`；如果不是，则返回所有默认的标识符 `token.IDENT`。
+
+```go
+// lexer/lexer.go
+func (l *Lexer) NextToken() token.Token {
+    var tok token.Token
+    switch l.ch {
+    // [...]
+    default:
+        if isLetter(l.ch) {
+            tok.Literal = l.readIdentifier()
+            tok.Type = token.LookupIdent(tok.Literal)
+            return tok
+        } else {
+            tok = newToken(token.ILLEGAL, l.ch)
+        }
+    }
+}
+```
+
+这里使用 `return tok` 提前结束，因为当调用 `readIdentifier()` 的时候，我们会重复调用 `readChar()` 函数并更新我们的 `readPosition` 和 `position` 字段的值直到最后一个，所以不需要在 `switch` 语句后面调用 `NextToken()` 函数。
+
+还有一点，在 `Monkey` 语言中不需要关注空格，所以需要跳过它们。
+
+```go
+// lexer/lexer.go
+func (l *Lexer) NextToken() token.Token {
+    var tok token.Token
+    l.skipWhitespace()
+    switch l.ch {
+        // [...]
+    }
+}
+
+func (l *Lexer) skipWhitespace() {
+    for l.ch == ' ' || l.ch == '\t' || l.ch == '\n' || l.ch == '\r' {
+        l.readChar()
+    }
+}
+```
+
+在很多词法分析器中都能找到这个辅助函数，有的称为 `eatWhitespace`，有的叫做 `consumeWhitespace` 或者其他名字。哪些字符需要跳过取决于被分析的语言。例如在有些语言实现中为为每个换行符创建 `token`，如果它们不在 `token` 流中正确的位置，就会抛出错误。为了接下来步骤简单些，我们暂时跳过换行符的分析。
+
+和之前一样，我们还需要为 `switch` 语句默认的分支中增加更多的功能。
+
+```go
+// lexer/lexer.go
+func (l *Lexer) NextToken() token.Token() {
+    var tok token.Token
+    l.skipWhitespace()
+    switch l.ch {
+    default:
+        if isLetter(l.ch) {
+            tok.Literal = l.readIdentifier()
+            tok.TYpe = token.LookupIdent(tok.Literal)
+            return ok
+        } else if isDigit(l.ch) {
+            tok.Type = token.INT
+            tok.Literal = l.readNumber()
+        } else {
+            tok = newToken(token.ILLEGAL, l.ch)
+        }
+    }
+}
+
+func (l *Lexer) readNumber() string {
+    position := l.position
+    for isDigit(l.ch) {
+        l.readChar()
+    }
+    return l.input[position:l.position]
+}
+
+func isDigit(ch byte) bool {
+    return '0' <= ch && ch <= '9'
+}
+```
+
+这个增加了 `readNumber` 函数，它和 `readIdentifer` 函数一样，只不过使用 `isDigit` 代替 `isLetter` 实现相应的功能。为了表示明确，我们为每一个功能单独设置函数。`isDigit` 函数和 `isLetter` 函数一样，它只返回传入的字节是否为 `0~9` 阿拉伯数字。
+
+添加该函数后，我们可以通过测试了：
+
+```shell
+$ go test ./lexer
+ok monkey/lexer 0.000s
+```
+
+不知你是否注意到，我们在 `readNumber` 函数中简化了很多，比如只读了整数类型，那么浮点型呢？亦或者 `16/8` 进制数字呢？在这里 `Monkey` 语言都忽略了它们，如果读者有兴趣可以拓展它们。
+
+上面是词法分析器的基础，我们可以很容易拓展它们来标记更多的 `Monkey` 源代码。
+
