@@ -1,4 +1,4 @@
-# `Pratt` 解析发如何工作的
+# `Pratt` 解析器如何工作的
 
 `parseExpression` 背后的算法和解析函数与优先级共同组合完整描述了 `Vaughan Pratt` 在 `Top Down Operator Precedence` 论文中的主要思想，但是我们的实现与这个算法还是有一点点不同。
 
