@@ -422,4 +422,211 @@ null
 5 != 5;
 ```
 
-这八个操作符可以分为两组，一是操作符生成布尔型值结果
+这八个操作符可以分为两组，一是操作符生成布尔型值结果；另一种是生成另外的值。我们开始实现第二组操作符 `+, -, *, /`。开始只支持整数操作数，只要它能工作，我们就可以开始实现生成布尔型操作符。
+
+测试框架已经就绪，只需要拓展 `TestEvalIntegerExpression` 函数即可适应新的操作符。
+
+```go
+//evalutor/evalutor_test.go
+func TestEvalIntegerExpression(t *testing.T){
+    tests :=[] struct {
+        input string
+        expected int64
+    }{
+       {"5", 5},
+        {"10", 10},
+        {"5", 5},
+        {"10", 10},
+        {"-5", -5},
+        {"-10", -10},
+        {"5+5+5+5-10", 10},
+        {"2*2*2*2*2", 32},
+        {"-50+100+ -50", 0},
+        {"5*2+10", 20},
+        {"5+2*10", 25},
+        {"20 + 2 * -10", 0},
+        {"50/2 * 2 +10", 60},
+        {"2*(5+10)", 30},
+        {"3*3*3+10", 37},
+        {"3*(3*3)+10", 37},
+        {"(5+10*2+15/3)*2+-10", 50},
+    }
+//[...]
+}
+```
+
+为了通过这些测试，首先要做的事拓展 `Eval` 函数中的 `switch` 语句：
+
+```go
+//evaluator/evalutor.go
+func Eval(node ast.Node) objet.Object{
+// [...]
+    case *ast.InfixExpression:
+        left := Eval(node.Left)
+        right := Eval(node.Right)
+        return evalInfixExpression(node.operator, left, right)
+// [...]
+```
+
+就跟 `*ast.PrefixExpression` 一样，我们首先计算操作数。现在我们有两个操作数，左右两边各一个抽象语法树节点。我们已经知道这可能是表达式、函数调用、整型字面值或者操作符表达式等等。这个我们不需要关心，这个有 `Eval` 函数负责。在计算玩操作数后，我们将两个返回值和操作符传递到 `evalInfixExpression` 函数中：
+
+```go
+func evalInfixExpression(
+    operator string,
+    left, right object.Object,
+)object.Object {
+    switch {
+    case left.Type()==object.INTEGER_OBJ && right.Type()==object.INTEGER_OBJ:
+        return evalIntegerInfixExpression(operator,left,right)
+    default:
+        return NULL
+    }
+}
+```
+
+一旦两边的操作数不是整数，就返回 `NULL`，当然后面会拓展这个函数，但是为了测试通过足够了。重点在于 `evalIntegerInfixExpression` 函数，该函数中，我们疯转了 `*object.Integers` 的操作加、减、乘和除。
+
+```go
+// evalutor/evalutor.go
+func evalIntegerInfixExpression(
+    operator string
+    left, right object.Object,
+)object.Object{
+    leftVal := left.(*object.Integer).Value
+    rightVal := right.(*object.Integer).Value
+    switch operator{
+    case "+":
+        return &object.Integer{Value:leftVal+rightVal}
+    case "-":
+        return &object.Integer{Value:leftVal-rightVal}
+    case "*":
+        return &object.Integer{Value:leftVal*rightVal}
+    case "/":
+        return &object.Integer{Value:leftVal/rightVal}
+    default:
+        return NULL
+    }
+}
+```
+
+现在测试通过了：
+
+```shell
+$ go test ./evalutor
+ok monkey/evalutor 0.007s
+```
+
+接下来拓展我们的 `TestEvalBooleanExpression` 函数，为上述操作符增加新的测试用例，因为它们都能生成布尔型数值。
+
+```go
+//evaluator/evaluator_test.go
+func TestEvalBooleanExpression(t *testing.T){
+    tests := []struct {
+        input string
+        expected bool
+    }{
+        {"true", true},
+        {"false", false},
+        {"1<2", true},
+        {"1>2", false},
+        {"1<1", false},
+        {"1>1", false},
+        {"1==1", true},
+        {"1!=1", false},
+        {"1==2", false},
+        {"1!=2", true},
+    }
+}
+```
+
+除此之外，还需要在 `evalIntegerInfixExpression` 函数增加一些代码，它们能够保证上述的单元测试能够通过。
+
+```go
+// evaluator/evaluator.go
+func evalIntegerInfixExpression(
+    operator string
+    left, right object.Object,
+) object.Object {
+    leftVal := right.(*object.Integer).Value
+    rightVal := right.(*obejct.Integer).Value
+    switch operator {
+// [...]
+    case "<":
+        return nativeBoolToBooleanObject(leftVal < rightVal)
+    case ">":
+        return nativeBoolToBooleanObject(leftVal > rightVal)
+    case "==":
+        return nativeBoolToBooleanObject(leftVal == rightVal)
+    case "!=":
+        return nativeBoolToBooleanObject(leftVal != rightVal)
+    default:
+        return NULL
+    }
+}
+```
+
+`nativeBoolToBoolean` 函数在布尔型字面值的是由已经使用，现在在比较为封装的值的时候又重用它们。至少对于整数而言，我们现在已经完全支持八种中缀操作符，剩下的工作就是支持布尔型操作数。
+
+`Monkey` 语言支持布尔型操作数的相等判断 `==` 和 `!=`，它不支持布尔型数值的加减乘除，这样减少的开发的工作量。首先要做的是增加测试内容，跟以前一样，拓展已有的测试方法：
+
+```go
+func TestEvalBooleanExpression(t *testing.T){
+    tests := []struct{
+        input string
+        expected bool
+    }{
+// [...]
+        {"true == true", true},
+        {"false == false", true},
+        {"true == false", false},
+        {"true != false", true},
+        {"(1<2)==true", true},
+        {"(1<2) == false", false},
+        {"(1>2) == true", false},
+        {"(1>2)==false", true},
+    }
+// [...]
+}
+```
+
+毫无疑问，目前的单元测试无法通过，我们需要增加一些额外的判断来让测试通过。
+
+```go
+//evalutor/evalutor.go
+func evalInfixExpression(
+    opertor string 
+    left, right object.Obejct,
+)object.Object {
+    switch {
+// [...]
+    case operator == "==":
+        return nativeBoolToBooleanObject(left == right)
+    case oeprator == "!=":
+        return nativeBoolToBooleanObject(left != right)
+    default:
+        return NULL
+    }
+}
+```
+
+我们只是在 `evalInfixExpression` 函数中增加四行代码，测试通过了。通过指针比较两个布尔型值是否相等。这样做的原因是我们所有的布尔型指针都指向了 `TRUE` 和 `FALSE`，对于 `NULL` 也是同样的道理。这个对于整型和其他数据类型并不奏效，因为对于 `*object.Integer` 我们每次都分配内存生成 `object.Integer`，所以每次的指针都是不一样的，否则像 `5==5` 就是 `false`，这个与事实不符。
+
+现在我们已经完成得差不多了，让我们看看现在解释器能够做什么！
+
+```shell
+$go run main.go
+Hello mrnugget! This is the monkey programming language!
+Feel free to type in commands
+>> 5 * 5 + 10
+35
+>> 3 + 4 * 5 == 3 * 1 + 4 * 5
+true
+>> 5 * 10 > 40 + 5
+true
+>> (5 > 5 == true) != false
+false
+>> 500 / 2 != 250
+false
+```
+
+到目前为止，我们已经完成了一个函数计算器，接下来让我们继续完成功能，使它变得更像一个编程语言。
