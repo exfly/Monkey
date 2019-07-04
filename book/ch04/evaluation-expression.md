@@ -594,7 +594,7 @@ func TestEvalBooleanExpression(t *testing.T){
 ```go
 //evalutor/evalutor.go
 func evalInfixExpression(
-    opertor string 
+    opertor string
     left, right object.Obejct,
 )object.Object {
     switch {
