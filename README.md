@@ -24,7 +24,7 @@ Enter "exit()" or CTRL+C to quit command interface
 
 using `let` as keyword, each line ends with `;`.
 
-```
+```monkey
 >>>let a = 3;
 >>>let b = 1;
 >>>a+b
@@ -35,7 +35,7 @@ using `let` as keyword, each line ends with `;`.
 
 `monkey` supports all basic arithmetic operation of `int`. `int` type is represented by `int64`.
 
-```
+```monkey
 >>> let a = 3;
 >>> let b = 1;
 >>> a + b
@@ -56,7 +56,7 @@ using `let` as keyword, each line ends with `;`.
 
 array is a list which organizes items by linear sequence. But types of items can be different from each other.
 
-```
+```monkey
 >>> let a = [1, 2.3, "array"];
 >>> a
 [1, 2.3, array]
@@ -69,7 +69,7 @@ array is a list which organizes items by linear sequence. But types of items can
 
 map is treated as `key-value` container. please attention to that only `boolean`, `int` and `string` types can be used as key.
 
-```
+```monkey
 >>> let a = {"name":"moneky", true:1, 7:"sevent"};
 >>> a
 {name: monkey, true: 1, 7: seven}
@@ -118,7 +118,7 @@ print literal value of objects.
 
 `monkey` use `fn` as the definition of function. Apart from regular function using, `monkey` also includes high order function.
 
-```
+```monkey
 >>>let add = fn(a, b) { return a + b;};
 >>> add(1,2)
 3
@@ -130,7 +130,8 @@ print literal value of objects.
 ### 2.5 If-else statements
 
 `monkey` supports if-else statements.
-```
+
+```monkey
 >>> let max = fn(a, b) { if (a > b) { return a;} else { return b; } };
 >>> max(1, 2)
 2
@@ -140,18 +141,8 @@ print literal value of objects.
 
 `monkey` support for-loop statement.
 
-```
+```monkey
 >>> let sum = fn(x) { let i = 1; let sum = 0; for (i < x) { let sum = sum + i; let i = i+1; } return sum; };
 >>> sum(100)
 4950
 ```
-
-## 3 Extensions
-
-To make `monkey` interpreter language to be more powerfull, it is deserved improving it.
-
-- [ ] float type
-- [ ] unicode literal
-- [ ] loop branch
-- [ ] translate into Chinese
-- [ ] ...
