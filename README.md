@@ -1,60 +1,67 @@
 # Monkey
-A interpreter language implementation in Go 
 
-# 1 Introduction
-[Write an Interpreter in Go](https://interpreterbook.com) source code. 
+A interpreter language implementation in Go.
+
+## 1 Introduction
+
+[Write an Interpreter in Go](https://interpreterbook.com) source code.
 
 [中文翻译](book/README.md)
 
 **Monkey** interpreter language which is implemented Go language. After typing `monkey` in terminal, you get into the `monkey` programming language.
 
-```
+```shell
 $ ./monkey
 Hello $Username! This is Monkey programming language!
 Feel free to type in commnd
 Enter "exit()" or CTRL+C to quit command interface
 >>>
-``` 
+```
 
-# 2 Syntax
+## 2 Syntax
 
-## 2.1 Definition
+### 2.1 Definition
+
 using `let` as keyword, each line ends with `;`.
-```
+
+```monkey
 >>>let a = 3;
->>>let b = 1.2;
+>>>let b = 1;
 >>>a+b
-4.2
+4
 ```
 
-## 2.2 Arithmetic operations
-`monkey` supports all basic arithmetic operation of `int` and `float` types. `int` type is represented by `int64` and `float` type is represented by `float64`.
+### 2.2 Arithmetic operations
 
-```
+`monkey` supports all basic arithmetic operation of `int`. `int` type is represented by `int64`.
+
+```monkey
 >>> let a = 3;
->>> let b = 1.2;
+>>> let b = 1;
 >>> a + b
-4.2
+4
 >>> a - b
-1.8
->>> a * b 
-3.6
->>> a / b 
-2.5
+2
+>>> a * b
+4
+>>> a / b
+3
 ```
 
-## 2.3 Builtin containers
-`monkey` contains two builtin containers: `array` and `map`. 
+### 2.3 Builtin containers
+
+`monkey` contains two builtin containers: `array` and `map`.
+
 - array
 
 array is a list which organizes items by linear sequence. But types of items can be different from each other.
 
-```
+```monkey
 >>> let a = [1, 2.3, "array"];
->>> a 
+>>> a
 [1, 2.3, array]
 >>> let b = push(a, "another");
->>> b 
+>>> b
 [1, 2.3, array, another]
 ```
 
@@ -62,7 +69,7 @@ array is a list which organizes items by linear sequence. But types of items can
 
 map is treated as `key-value` container. please attention to that only `boolean`, `int` and `string` types can be used as key.
 
-```
+```monkey
 >>> let a = {"name":"moneky", true:1, 7:"sevent"};
 >>> a
 {name: monkey, true: 1, 7: seven}
@@ -73,11 +80,11 @@ monkey
 >> a[7]
 seven
 >>>let b = set(a, 8, "eight");
->>> b 
+>>> b
 {name: moneky, true: 1, 7: sevent, 8: eight}
 ```
 
-## 2.4 Builtin functions
+### 2.4 Builtin functions
 
 - `len`
 
@@ -107,12 +114,11 @@ insert key value pair into the map
 
 print literal value of objects.
 
-
-## 2.5 Function
+### 2.5 Function
 
 `monkey` use `fn` as the definition of function. Apart from regular function using, `monkey` also includes high order function.
 
-```
+```monkey
 >>>let add = fn(a, b) { return a + b;};
 >>> add(1,2)
 3
@@ -121,31 +127,22 @@ print literal value of objects.
 5
 ```
 
-## 2.5 If-else statements
+### 2.5 If-else statements
 
 `monkey` supports if-else statements.
-```
+
+```monkey
 >>> let max = fn(a, b) { if (a > b) { return a;} else { return b; } };
 >>> max(1, 2)
 2
 ```
 
-## 2.6 For-loop statements
+### 2.6 For-loop statements
 
 `monkey` support for-loop statement.
 
-```
+```monkey
 >>> let sum = fn(x) { let i = 1; let sum = 0; for (i < x) { let sum = sum + i; let i = i+1; } return sum; };
 >>> sum(100)
 4950
 ```
-
-
-# 3 Extensions
-To make `monkey` interpreter language to be more powerfull, it is deserved improving it.
-
-- [x] float type
-- [x] unicode literal
-- [x] loop branch
-- [x] translate into Chinese
-- [ ] ... 
