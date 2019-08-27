@@ -11,6 +11,7 @@ A interpreter language implementation in Go.
 **Monkey** interpreter language which is implemented Go language. After typing `monkey` in terminal, you get into the `monkey` programming language.
 
 ```shell
+$ GO111MODULE=on go build
 $ ./monkey
 Hello $Username! This is Monkey programming language!
 Feel free to type in commnd
